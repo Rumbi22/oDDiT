@@ -21,7 +21,7 @@ app.get('/api/pagespeed', async (req, res) => {
   try {
     const response = await axios.get('https://www.googleapis.com/pagespeedonline/v5/runPagespeed', {
       params: {
-        url: url.startsWith('http') ? url : `https://${url}`,
+        url: `https://${url.replace(/^https?:\/\//i, '').replace(/^www\./i, '')}`,
         strategy,
         key: GOOGLE_API_KEY,
         category: ['performance', 'accessibility', 'best-practices', 'seo']
