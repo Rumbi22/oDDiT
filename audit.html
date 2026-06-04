@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ODD-it — Audit</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --wine: #6B1A38; --wine-dark: #4B1528; --wine-mid: #72243E;
+      --pink: #D4537E; --blush: #FDF5F7; --blush-mid: #FBEAF0;
+      --blush-border: #F4C0D1; --blush-light: #ED93B1;
+      --psi-pass: #0CCE6B; --psi-warn: #FFA400; --psi-fail: #FF4E42;
+      --psi-pass-bg: #F0FBF5; --psi-warn-bg: #FFF8ED; --psi-fail-bg: #FFF0EF;
+      --psi-pass-text: #047A3F; --psi-warn-text: #8A5600; --psi-fail-text: #C0392B;
+      --text-primary: #1a1a1a; --text-secondary: #444;
+      --text-muted: #888; --text-faint: #bbb;
+      --border: #F4C0D1; --border-light: #FBEAF0;
+      --font-sans: system-ui, -apple-system, sans-serif;
+      --font-serif: 'Georgia', serif;
+      --r-md: 8px; --r-lg: 10px; --r-xl: 12px;
+    }
+
+    body { font-family: var(--font-sans); background: #fff; color: var(--text-primary); min-height: 100vh; }
+
+    /* ── Topbar ── */
+    .topbar { background: var(--wine); padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+    .brand { display: flex; align-items: baseline; gap: 2px; }
+    .brand-name { font-family: var(--font-serif); font-size: 20px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+    .brand-dash { color: var(--blush-border); font-size: 20px; font-weight: 700; }
+    .brand-it   { font-family: var(--font-serif); font-size: 20px; font-style: italic; color: var(--blush-border); }
+    .brand-sub  { font-size: 9px; color: rgba(255,255,255,0.45); letter-spacing: 3px; text-transform: uppercase; margin-left: 12px; align-self: center; }
+    .topbar-right { font-size: 10px; color: rgba(255,255,255,0.45); letter-spacing: 1px; text-transform: uppercase; }
+
+    /* ── Client bar ── */
+    .client-bar { background: var(--blush); border-bottom: 1px solid var(--border); padding: 10px 28px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+    .client-chunk { display: flex; flex-direction: column; gap: 2px; }
+    .client-label { font-size: 9px; color: var(--pink); text-transform: uppercase; letter-spacing: 1.5px; }
+    .client-value { font-size: 12px; color: var(--text-primary); font-weight: 500; }
+    .client-url   { font-size: 12px; color: var(--text-secondary); }
+    .client-sep   { color: var(--blush-border); font-size: 16px; }
+    .client-tag   { font-size: 8px; background: var(--blush-border); color: var(--wine); padding: 1px 6px; border-radius: 20px; margin-left: 5px; font-weight: 500; }
+    .new-audit-btn { margin-left: auto; background: transparent; border: 1px solid var(--blush-border); color: var(--wine); padding: 6px 14px; border-radius: 20px; font-size: 11px; cursor: pointer; transition: background 0.15s; text-decoration: none; }
+    .new-audit-btn:hover { background: var(--blush-mid); }
+
+    /* ── Main tabs ── */
+    .main-tabs { background: #fff; border-bottom: 1px solid var(--border); padding: 0 28px; display: flex; overflow-x: auto; }
+    .tab { padding: 12px 16px; font-size: 11px; font-weight: 500; color: #aaa; cursor: pointer; border-bottom: 2px solid transparent; letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap; transition: color 0.15s; }
+    .tab.active { color: var(--wine); border-bottom-color: var(--wine); }
+    .tab:hover:not(.active) { color: var(--wine-mid); }
+
+    /* ── Sub-tabs ── */
+    .subtabs { background: #fff; padding: 0 28px; display: flex; border-bottom: 1px solid var(--border); }
+    .subtab { padding: 10px 14px; font-size: 11px; font-weight: 500; color: #aaa; cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s; }
+    .subtab.active { color: var(--pink); border-bottom-color: var(--pink); }
+
+    /* ── Tab panels ── */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .subtab-panel { display: none; }
+    .subtab-panel.active { display: block; }
+
+    /* ── Content ── */
+    .content { padding: 24px 28px; }
+    .eyebrow { font-size: 9px; color: var(--pink); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; }
+    .section-title { font-family: var(--font-serif); font-size: 20px; font-weight: 400; margin-bottom: 3px; }
+    .section-sub { font-size: 11px; color: #aaa; margin-bottom: 22px; }
+    .divider { border: none; border-top: 1px solid var(--border-light); margin: 22px 0; }
+
+    /* ── CWV list ── */
+    .cwv-list { background: var(--blush); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; margin-bottom: 22px; }
+    .cwv-header { padding: 10px 20px; background: var(--blush); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .cwv-header-label { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: var(--pink); font-weight: 500; }
+    .cwv-overall { font-size: 11px; font-weight: 600; }
+    .cwv-row { display: flex; align-items: center; padding: 11px 20px; border-bottom: 1px solid var(--border-light); background: #fff; }
+    .cwv-row:last-child { border-bottom: none; }
+    .cwv-name  { font-size: 12px; color: var(--text-primary); font-weight: 500; width: 210px; flex-shrink: 0; }
+    .cwv-desc  { font-size: 11px; color: var(--text-faint); flex: 1; }
+    .cwv-value { font-family: var(--font-serif); font-size: 14px; font-weight: 500; width: 64px; text-align: right; flex-shrink: 0; margin-right: 12px; }
+    .badge { font-size: 9px; padding: 3px 9px; border-radius: 20px; font-weight: 500; text-align: center; white-space: nowrap; flex-shrink: 0; width: 56px; }
+    .badge-pass { background: var(--psi-pass-bg); color: var(--psi-pass-text); }
+    .badge-warn { background: var(--psi-warn-bg); color: var(--psi-warn-text); }
+    .badge-fail { background: var(--psi-fail-bg); color: var(--psi-fail-text); }
+    .c-pass { color: var(--psi-pass); } .c-warn { color: var(--psi-warn); } .c-fail { color: var(--psi-fail); }
+
+    /* ── Split row ── */
+    .split-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 22px; }
+
+    .thumb-card { background: var(--blush); border: 1px solid var(--border); border-radius: var(--r-lg); min-height: 230px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; overflow: hidden; }
+    .thumb-card img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--r-lg); display: block; }
+
+    .scores-col { display: flex; flex-direction: column; gap: 10px; }
+    .score-card { background: var(--blush); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 14px 16px; display: flex; align-items: center; gap: 14px; }
+    .score-ring { width: 52px; height: 52px; flex-shrink: 0; position: relative; }
+    .score-ring svg { transform: rotate(-90deg); }
+    .score-num { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-family: var(--font-serif); font-size: 15px; font-weight: 700; }
+    .score-info .score-label { font-size: 11px; color: #aaa; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 2px; }
+    .score-info .score-desc  { font-size: 10px; color: var(--text-faint); }
+
+    /* ── Competitor table ── */
+    .comp-wrap { border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; margin-bottom: 22px; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+    .data-table th { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--pink); padding: 9px 12px; border-bottom: 1px solid var(--border); text-align: center; background: var(--blush); font-weight: 500; }
+    .data-table th:first-child { text-align: left; }
+    .data-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-light); text-align: center; font-size: 12px; }
+    .data-table td:first-child { text-align: left; color: var(--text-secondary); font-size: 11px; }
+    .data-table tr:last-child td { border-bottom: none; }
+    .client-row td { background: var(--blush); font-weight: 500; }
+
+    /* ── Key findings ── */
+    .findings-wrap { border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; }
+    .finding { padding: 14px 18px; border-bottom: 1px solid var(--border); border-left: 3px solid var(--pink); background: #fff; }
+    .finding:last-child { border-bottom: none; }
+    .finding.gap { border-left-color: var(--psi-warn); }
+    .finding-title { font-size: 12px; font-weight: 500; color: var(--wine-dark); margin-bottom: 3px; }
+    .finding-body  { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+    /* ── Loading / error ── */
+    .loading-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 56px 24px; gap: 14px; color: var(--text-muted); font-size: 13px; }
+    .spinner { width: 28px; height: 28px; border: 2px solid var(--border); border-top-color: var(--pink); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-box { background: var(--psi-fail-bg); border: 1px solid #ffc5c3; border-radius: var(--r-lg); padding: 14px 18px; color: var(--psi-fail-text); font-size: 12px; }
+
+    /* ── Coming soon ── */
+    .coming-soon { display: flex; align-items: center; justify-content: center; min-height: 240px; color: #ccc; font-size: 13px; flex-direction: column; gap: 8px; }
+  </style>
+</head>
+<body>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div style="display:flex;align-items:center;">
+      <div class="brand">
+        <span class="brand-name">ODD</span><span class="brand-dash">-</span><span class="brand-it">it</span>
+      </div>
+      <span class="brand-sub">Audit assistant</span>
+    </div>
+    <div class="topbar-right">Freerange Creatives</div>
+  </div>
+
+  <!-- Client bar -->
+  <div class="client-bar" id="clientBar">
+    <div class="client-chunk"><div class="client-label">Client</div><div class="client-value" id="barClientName">—</div></div>
+    <span class="client-sep">|</span>
+    <div class="client-chunk"><div class="client-label">Domain</div><div class="client-url" id="barClientDomain">—</div></div>
+    <span class="client-sep">|</span>
+    <div class="client-chunk"><div class="client-label">Competitors</div><div class="client-url" id="barCompetitors">—</div></div>
+    <a href="/" class="new-audit-btn">+ New audit</a>
+  </div>
+
+  <!-- Main tabs -->
+  <div class="main-tabs">
+    <div class="tab active" data-tab="pagespeed">PageSpeed</div>
+    <div class="tab" data-tab="search">Search visibility</div>
+    <div class="tab" data-tab="trends">Google Trends</div>
+    <div class="tab" data-tab="geo">GEO / AI</div>
+    <div class="tab" data-tab="gap">Competitor gap</div>
+  </div>
+
+  <!-- PageSpeed tab -->
+  <div class="tab-panel active" id="tab-pagespeed">
+    <div class="subtabs">
+      <div class="subtab active" data-subtab="mobile">Mobile</div>
+      <div class="subtab" data-subtab="desktop">Desktop</div>
+    </div>
+
+    <!-- Mobile subtab -->
+    <div class="subtab-panel active" id="subtab-mobile">
+      <div class="content" id="content-mobile">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <span>Running PageSpeed analysis…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Desktop subtab -->
+    <div class="subtab-panel" id="subtab-desktop">
+      <div class="content" id="content-desktop">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <span>Running PageSpeed analysis…</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Other tabs — coming soon -->
+  <div class="tab-panel" id="tab-search">
+    <div class="content"><div class="coming-soon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>Search visibility — coming soon</div></div>
+  </div>
+  <div class="tab-panel" id="tab-trends">
+    <div class="content"><div class="coming-soon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Google Trends — coming soon</div></div>
+  </div>
+  <div class="tab-panel" id="tab-geo">
+    <div class="content"><div class="coming-soon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>GEO / AI visibility — coming soon</div></div>
+  </div>
+  <div class="tab-panel" id="tab-gap">
+    <div class="content"><div class="coming-soon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Competitor gap — coming soon</div></div>
+  </div>
+
+  <script>
+    // ── Params from URL ────────────────────────────────────────────────────────
+    const params      = new URLSearchParams(window.location.search);
+    const clientName  = params.get('clientName')  || 'Client';
+    const clientDomain= params.get('clientDomain')|| '';
+    const country     = params.get('country')     || 'ZA';
+    const competitors = params.get('competitors') ? params.get('competitors').split(',').filter(Boolean) : [];
+
+    // Populate client bar
+    document.getElementById('barClientName').textContent   = clientName;
+    document.getElementById('barClientDomain').textContent = clientDomain;
+    document.getElementById('barCompetitors').textContent  = competitors.length ? competitors.join(' · ') : 'None';
+
+    // ── Tab switching ──────────────────────────────────────────────────────────
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      });
+    });
+
+    document.querySelectorAll('.subtab').forEach(st => {
+      st.addEventListener('click', () => {
+        document.querySelectorAll('.subtab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.subtab-panel').forEach(p => p.classList.remove('active'));
+        st.classList.add('active');
+        document.getElementById('subtab-' + st.dataset.subtab).classList.add('active');
+      });
+    });
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+    function scoreColor(s) {
+      if (s >= 90) return 'var(--psi-pass)';
+      if (s >= 50) return 'var(--psi-warn)';
+      return 'var(--psi-fail)';
+    }
+    function scoreClass(s) {
+      if (s >= 90) return 'c-pass';
+      if (s >= 50) return 'c-warn';
+      return 'c-fail';
+    }
+    function scoreDesc(s) {
+      if (s >= 90) return 'Good';
+      if (s >= 50) return 'Needs improvement';
+      return 'Poor';
+    }
+    function cwvBadge(score) {
+      if (score === null || score === undefined) return '<span class="badge badge-warn">N/A</span>';
+      if (score >= 0.9) return '<span class="badge badge-pass">Pass</span>';
+      if (score >= 0.5) return '<span class="badge badge-warn">Slow</span>';
+      return '<span class="badge badge-fail">Fail</span>';
+    }
+    function cwvClass(score) {
+      if (score === null || score === undefined) return 'c-warn';
+      if (score >= 0.9) return 'c-pass';
+      if (score >= 0.5) return 'c-warn';
+      return 'c-fail';
+    }
+    function ringOffset(score) {
+      const r = 20; const circ = 2 * Math.PI * r;
+      return circ - (score / 100) * circ;
+    }
+    function scoreRing(score, label) {
+      const color  = scoreColor(score);
+      const offset = ringOffset(score);
+      return `
+        <div class="score-card">
+          <div class="score-ring">
+            <svg width="52" height="52" viewBox="0 0 52 52">
+              <circle cx="26" cy="26" r="20" fill="none" stroke="var(--blush-mid)" stroke-width="5"/>
+              <circle cx="26" cy="26" r="20" fill="none" stroke="${color}" stroke-width="5"
+                stroke-dasharray="${(2*Math.PI*20).toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}"
+                stroke-linecap="round"/>
+            </svg>
+            <div class="score-num" style="color:${color};">${score}</div>
+          </div>
+          <div class="score-info">
+            <div class="score-label">${label}</div>
+            <div class="score-desc">${scoreDesc(score)}</div>
+          </div>
+        </div>`;
+    }
+
+    // ── Build PageSpeed HTML ───────────────────────────────────────────────────
+    function buildPageSpeed(data, competitorResults, strategy) {
+      const { cwv, scores, screenshot, cwvPass } = data;
+
+      const cwvOverallClass = cwvPass ? 'c-pass' : 'c-fail';
+      const cwvOverallText  = `Core Web Vitals Assessment: <strong>${cwvPass ? 'Passed' : 'Failed'}</strong>`;
+
+      const cwvRows = Object.values(cwv).map(m => `
+        <div class="cwv-row">
+          <div class="cwv-name">${m.label}</div>
+          <div class="cwv-desc">${m.desc}</div>
+          <div class="cwv-value ${cwvClass(m.score)}">${m.value || '—'}</div>
+          ${cwvBadge(m.score)}
+        </div>`).join('');
+
+      const screenshotHTML = screenshot
+        ? `<img src="${screenshot}" alt="Page screenshot">`
+        : `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pink)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+           <span style="font-size:11px;color:var(--pink);">Screenshot from PageSpeed Insights</span>`;
+
+      const scoresHTML = `
+        ${scoreRing(scores.performance,   'Performance')}
+        ${scoreRing(scores.accessibility, 'Accessibility')}
+        ${scoreRing(scores.seo,           'SEO')}
+        ${scoreRing(scores.bestPractices, 'Best practices')}`;
+
+      // Competitor table rows
+      const allDomains = [{ url: clientDomain, scores: data.scores, cwvPass: data.cwvPass, isClient: true }, ...competitorResults];
+      const compRows = allDomains.map(d => {
+        const cwvCell = d.cwvPass
+          ? '<span class="badge badge-pass" style="display:inline-block;">Pass</span>'
+          : '<span class="badge badge-fail" style="display:inline-block;">Fail</span>';
+        const tag = d.isClient ? `<span class="client-tag">client</span>` : '';
+        const sc  = d.scores || {};
+        return `<tr class="${d.isClient ? 'client-row' : ''}">
+          <td>${d.url}${tag}</td>
+          <td>${cwvCell}</td>
+          <td><span class="${scoreClass(sc.performance)}">${sc.performance ?? '—'}</span></td>
+          <td><span class="${scoreClass(sc.accessibility)}">${sc.accessibility ?? '—'}</span></td>
+          <td><span class="${scoreClass(sc.seo)}">${sc.seo ?? '—'}</span></td>
+          <td><span class="${scoreClass(sc.bestPractices)}">${sc.bestPractices ?? '—'}</span></td>
+        </tr>`;
+      }).join('');
+
+      return `
+        <div class="eyebrow">PageSpeed · ${strategy}</div>
+        <div class="section-title">${clientDomain}</div>
+        <div class="section-sub">Live data from Google PageSpeed Insights API</div>
+
+        <div class="eyebrow" style="margin-bottom:10px;">Core web vitals</div>
+        <div class="cwv-list">
+          <div class="cwv-header">
+            <span class="cwv-header-label">Metric · what it measures · result</span>
+            <span class="cwv-overall ${cwvOverallClass}">${cwvOverallText}</span>
+          </div>
+          ${cwvRows}
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="split-row">
+          <div>
+            <div class="eyebrow" style="margin-bottom:10px;">Page screenshot</div>
+            <div class="thumb-card">${screenshotHTML}</div>
+          </div>
+          <div>
+            <div class="eyebrow" style="margin-bottom:10px;">Lighthouse scores</div>
+            <div class="scores-col">${scoresHTML}</div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="eyebrow" style="margin-bottom:10px;">Competitor comparison</div>
+        <div class="comp-wrap" style="margin-bottom:22px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:30%;">Domain</th>
+                <th>Core web vitals</th>
+                <th>Performance</th>
+                <th>Accessibility</th>
+                <th>SEO</th>
+                <th>Best practices</th>
+              </tr>
+            </thead>
+            <tbody>${compRows}</tbody>
+          </table>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="eyebrow" style="margin-bottom:10px;">Key findings</div>
+        <div class="findings-wrap" id="findings-${strategy}">
+          <div class="loading-state" style="padding:24px;">
+            <div class="spinner"></div>
+            <span style="font-size:12px;">Generating findings…</span>
+          </div>
+        </div>`;
+    }
+
+    // ── Fetch PageSpeed for one domain ─────────────────────────────────────────
+    async function fetchPSI(domain, strategy) {
+      const res  = await fetch(`/api/pagespeed?url=${encodeURIComponent(domain)}&strategy=${strategy}`);
+      if (!res.ok) throw new Error((await res.json()).error || 'API error');
+      return res.json();
+    }
+
+    // ── Fetch AI findings ──────────────────────────────────────────────────────
+    async function fetchFindings(clientData, competitorResults, strategy) {
+      const el = document.getElementById(`findings-${strategy}`);
+      try {
+        const res = await fetch('/api/findings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientDomain, clientData, competitorResults })
+        });
+        const findings = await res.json();
+        el.innerHTML = findings.map(f => `
+          <div class="finding ${f.type === 'gap' ? 'gap' : ''}">
+            <div class="finding-title">${f.title}</div>
+            <div class="finding-body">${f.body}</div>
+          </div>`).join('');
+      } catch (e) {
+        el.innerHTML = `<div class="finding"><div class="finding-body" style="color:#ccc;">Could not generate findings.</div></div>`;
+      }
+    }
+
+    // ── Run audit ──────────────────────────────────────────────────────────────
+    async function runAudit(strategy) {
+      const contentEl = document.getElementById(`content-${strategy}`);
+
+      try {
+        // Fetch client + all competitors in parallel
+        const [clientData, ...competitorResults] = await Promise.all([
+          fetchPSI(clientDomain, strategy),
+          ...competitors.map(c => fetchPSI(c, strategy).catch(() => ({ url: c, scores: {}, cwvPass: false, error: true })))
+        ]);
+
+        contentEl.innerHTML = buildPageSpeed(clientData, competitorResults, strategy);
+        fetchFindings(clientData, competitorResults, strategy);
+
+      } catch (err) {
+        contentEl.innerHTML = `<div class="error-box">Failed to load PageSpeed data: ${err.message}</div>`;
+      }
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────────
+    if (clientDomain) {
+      runAudit('mobile');
+      runAudit('desktop');
+    } else {
+      document.getElementById('content-mobile').innerHTML  = '<div class="error-box">No domain provided. <a href="/">Start a new audit.</a></div>';
+      document.getElementById('content-desktop').innerHTML = '<div class="error-box">No domain provided. <a href="/">Start a new audit.</a></div>';
+    }
+  </script>
+</body>
+</html>

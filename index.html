@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ODD-it — New Audit</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --wine: #6B1A38; --wine-dark: #4B1528; --wine-mid: #72243E;
+      --pink: #D4537E; --blush: #FDF5F7; --blush-mid: #FBEAF0;
+      --blush-border: #F4C0D1;
+      --psi-fail-bg: #FFF0EF; --psi-fail-text: #C0392B;
+      --text-primary: #1a1a1a; --text-muted: #888;
+      --border: #F4C0D1; --border-light: #FBEAF0;
+      --font-sans: system-ui, -apple-system, sans-serif;
+      --font-serif: 'Georgia', serif;
+      --r-md: 8px; --r-lg: 10px; --r-xl: 12px;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--blush);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Topbar */
+    .topbar { background: var(--wine); padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; }
+    .brand { display: flex; align-items: baseline; gap: 2px; }
+    .brand-name { font-family: var(--font-serif); font-size: 20px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+    .brand-dash { color: var(--blush-border); font-size: 20px; font-weight: 700; }
+    .brand-it   { font-family: var(--font-serif); font-size: 20px; font-style: italic; color: var(--blush-border); }
+    .brand-sub  { font-size: 9px; color: rgba(255,255,255,0.45); letter-spacing: 3px; text-transform: uppercase; margin-left: 12px; align-self: center; }
+    .topbar-right { font-size: 10px; color: rgba(255,255,255,0.45); letter-spacing: 1px; text-transform: uppercase; }
+
+    /* Setup layout */
+    .setup-container { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 48px 20px; }
+    .setup-card { background: #fff; border: 1px solid var(--border); border-radius: var(--r-xl); padding: 36px 40px; width: 100%; max-width: 640px; }
+    .setup-heading { font-family: var(--font-serif); font-size: 26px; color: var(--text-primary); font-weight: 400; margin-bottom: 6px; }
+    .setup-sub { font-size: 12px; color: #aaa; margin-bottom: 28px; }
+
+    /* Form sections */
+    .section-label { font-size: 9px; color: var(--pink); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .label-note { font-size: 9px; color: #ccc; text-transform: none; letter-spacing: 0; }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 11px; color: var(--text-muted); }
+    .field-hint { font-size: 10px; color: #ccc; }
+    .form-divider { border: none; border-top: 1px solid var(--border-light); margin: 22px 0; }
+
+    input, select {
+      background: var(--blush);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--text-primary);
+      outline: none;
+      font-family: var(--font-sans);
+      width: 100%;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus { border-color: var(--pink); }
+    input::placeholder { color: #ccc; }
+
+    /* Competitors */
+    .comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .comp-field { display: flex; flex-direction: column; gap: 5px; }
+    .comp-field label { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+    .comp-num { width: 18px; height: 18px; border-radius: 50%; background: var(--blush-border); color: var(--wine); font-size: 9px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+    /* Run button */
+    .run-btn { width: 100%; background: var(--wine); border: none; color: #fff; padding: 14px; border-radius: var(--r-lg); font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 28px; transition: background 0.15s; }
+    .run-btn:hover { background: var(--wine-mid); }
+    .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .setup-note { font-size: 10px; color: #ccc; text-align: center; margin-top: 10px; }
+
+    .setup-error { margin-top: 14px; background: var(--psi-fail-bg); border: 1px solid #ffc5c3; border-radius: var(--r-md); padding: 10px 14px; font-size: 12px; color: var(--psi-fail-text); display: none; }
+
+    .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div style="display:flex;align-items:center;">
+      <div class="brand">
+        <span class="brand-name">ODD</span><span class="brand-dash">-</span><span class="brand-it">it</span>
+      </div>
+      <span class="brand-sub">Audit assistant</span>
+    </div>
+    <div class="topbar-right">Freerange Creatives</div>
+  </div>
+
+  <div class="setup-container">
+    <div class="setup-card">
+      <div class="setup-heading">New audit</div>
+      <div class="setup-sub">Enter the client domain and up to 4 competitors to begin.</div>
+
+      <div class="section-label">Client</div>
+      <div class="field-row" style="margin-bottom:0;">
+        <div class="field">
+          <label for="clientName">Client name</label>
+          <input type="text" id="clientName" placeholder="e.g. Durbanville Hills">
+        </div>
+        <div class="field">
+          <label for="clientDomain">Client domain</label>
+          <input type="text" id="clientDomain" placeholder="e.g. durbanvillehills.co.za">
+          <span class="field-hint">No https:// needed</span>
+        </div>
+      </div>
+
+      <div class="form-divider"></div>
+
+      <div class="section-label">
+        Competitors <span class="label-note">up to 4, all optional</span>
+      </div>
+      <div class="comp-grid">
+        <div class="comp-field">
+          <label><span class="comp-num">1</span> Competitor domain</label>
+          <input type="text" id="comp1" placeholder="e.g. kanonkop.co.za">
+        </div>
+        <div class="comp-field">
+          <label><span class="comp-num">2</span> Competitor domain</label>
+          <input type="text" id="comp2" placeholder="e.g. rustenberg.co.za">
+        </div>
+        <div class="comp-field">
+          <label><span class="comp-num">3</span> Competitor domain</label>
+          <input type="text" id="comp3" placeholder="e.g. delheim.com">
+        </div>
+        <div class="comp-field">
+          <label><span class="comp-num">4</span> Competitor domain</label>
+          <input type="text" id="comp4" placeholder="optional">
+        </div>
+      </div>
+
+      <div class="form-divider"></div>
+
+      <div class="section-label">Settings</div>
+      <div class="field-row">
+        <div class="field">
+          <label for="country">Country</label>
+          <select id="country">
+            <option value="ZA">South Africa</option>
+            <option value="GB">United Kingdom</option>
+            <option value="US">United States</option>
+            <option value="AU">Australia</option>
+            <option value="DE">Germany</option>
+            <option value="FR">France</option>
+            <option value="NL">Netherlands</option>
+            <option value="NG">Nigeria</option>
+            <option value="KE">Kenya</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="language">Language</label>
+          <select id="language">
+            <option value="en">English</option>
+            <option value="af">Afrikaans</option>
+            <option value="fr">French</option>
+            <option value="de">German</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="run-btn" id="runBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        Run audit
+      </button>
+      <div class="setup-note">Pulls live data from Google PageSpeed Insights, DataForSEO &amp; Google Trends</div>
+      <div class="setup-error" id="setupError"></div>
+    </div>
+  </div>
+
+  <script>
+    function cleanDomain(val) {
+      return val.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+    }
+
+    document.getElementById('runBtn').addEventListener('click', startAudit);
+    document.addEventListener('keydown', e => { if (e.key === 'Enter') startAudit(); });
+
+    function startAudit() {
+      const btn      = document.getElementById('runBtn');
+      const errorEl  = document.getElementById('setupError');
+      errorEl.style.display = 'none';
+
+      const clientName   = document.getElementById('clientName').value.trim();
+      const clientDomain = cleanDomain(document.getElementById('clientDomain').value);
+
+      if (!clientName)   { showError('Please enter a client name.');   return; }
+      if (!clientDomain) { showError('Please enter a client domain.'); return; }
+
+      const competitors = ['comp1','comp2','comp3','comp4']
+        .map(id => cleanDomain(document.getElementById(id).value))
+        .filter(Boolean);
+
+      const params = new URLSearchParams({
+        clientName,
+        clientDomain,
+        country:  document.getElementById('country').value,
+        language: document.getElementById('language').value,
+        competitors: competitors.join(',')
+      });
+
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner"></div> Starting audit…';
+      window.location.href = `/audit?${params.toString()}`;
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('setupError');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+  </script>
+</body>
+</html>
