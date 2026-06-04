@@ -87,8 +87,8 @@
     /* ── Split row ── */
     .split-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 22px; }
 
-    .thumb-card { background: var(--blush); border: 1px solid var(--border); border-radius: var(--r-lg); min-height: 230px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; overflow: hidden; }
-    .thumb-card img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--r-lg); display: block; }
+    .thumb-card { background: var(--blush); border: 1px solid var(--border); border-radius: var(--r-lg); height: 230px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; overflow: hidden; }
+    .thumb-card img { width: 100%; height: 100%; object-fit: contain; object-position: top; border-radius: var(--r-lg); display: block; padding: 8px; }
 
     .scores-col { display: flex; flex-direction: column; gap: 10px; }
     .score-card { background: var(--blush); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 14px 16px; display: flex; align-items: center; gap: 14px; }

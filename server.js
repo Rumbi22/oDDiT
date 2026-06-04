@@ -19,14 +19,14 @@ app.get('/api/pagespeed', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'url required' });
 
   try {
-    const response = await axios.get('https://www.googleapis.com/pagespeedonline/v5/runPagespeed', {
-      params: {
-        url: `https://${url.replace(/^https?:\/\//i, '').replace(/^www\./i, '')}`,
-        strategy,
-        key: GOOGLE_API_KEY,
-        category: ['performance', 'accessibility', 'best-practices', 'seo']
-      }
-    });
+    const cleanUrl = `https://${url.replace(/^https?:\/\//i, '').replace(/^www\./i, '')}`;
+    const psiUrl = new URL('https://www.googleapis.com/pagespeedonline/v5/runPagespeed');
+    psiUrl.searchParams.set('url', cleanUrl);
+    psiUrl.searchParams.set('strategy', strategy);
+    psiUrl.searchParams.set('key', GOOGLE_API_KEY);
+    ['performance', 'accessibility', 'best-practices', 'seo'].forEach(c => psiUrl.searchParams.append('category', c));
+
+    const response = await axios.get(psiUrl.toString());
 
     const lhr       = response.data.lighthouseResult;
     const cats      = lhr.categories;
