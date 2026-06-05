@@ -124,19 +124,21 @@ app.get('/api/trends/autocomplete', async (req, res) => {
 
 // ── Google Trends data — DataForSEO Live ─────────────────────────────────────
 app.post('/api/trends', async (req, res) => {
-  const { keywords, dateFrom, dateTo, locationCode } = req.body;
+  const { keywords, dateFrom, dateTo, locationCode, geo } = req.body;
   if (!keywords || !keywords.length) return res.status(400).json({ error: 'keywords required' });
 
+  // Accept either locationCode or geo (frontend sends geo)
+  const locCode = locationCode || parseInt(geo) || 2710;
+
   try {
-    // keywords is array of { keyword, mid }
-    // DataForSEO doesn't support topic mids — use plain keyword text
-    const kwStrings = keywords.map(k => k.keyword || k);
+    // keywords is array of { keyword, mid } — use plain keyword text
+    const kwStrings = keywords.map(k => (typeof k === 'object' ? k.keyword : k)).filter(Boolean);
 
     const taskPayload = [{
       keywords:      kwStrings,
-      date_from:     dateFrom     || new Date(Date.now() - 365*24*60*60*1000).toISOString().split('T')[0],
-      date_to:       dateTo       || new Date().toISOString().split('T')[0],
-      location_code: locationCode || 2710, // South Africa default
+      date_from:     dateFrom || new Date(Date.now() - 365*24*60*60*1000).toISOString().split('T')[0],
+      date_to:       dateTo   || new Date().toISOString().split('T')[0],
+      location_code: locCode,
       type:          'web'
     }];
 
@@ -170,7 +172,7 @@ app.post('/api/trends', async (req, res) => {
           keyword:       kw,
           date_from:     dateFrom || new Date(Date.now() - 365*24*60*60*1000).toISOString().split('T')[0],
           date_to:       dateTo   || new Date().toISOString().split('T')[0],
-          location_code: locationCode || 2710,
+          location_code: locCode,
           type:          'web'
         }];
         const relRes    = await axios.post(
