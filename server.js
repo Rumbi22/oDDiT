@@ -8,7 +8,6 @@ const googleTrends = require('google-trends-api');
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
 const GOOGLE_API_KEY    = process.env.GOOGLE_API_KEY;
 const DATAFORSEO_CREDS  = process.env.DATAFORSEO_CREDS;
@@ -200,7 +199,8 @@ app.post('/api/trends', async (req, res) => {
   }
 });
 
-// ── Serve pages ───────────────────────────────────────────────────────────────
+// ── Serve pages ─────────────────────────────────────────────────────────────
+app.use(express.static(path.join(__dirname, 'public')));
 app.get('/',      (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/audit', (req, res) => res.sendFile(path.join(__dirname, 'public', 'audit.html')));
 
