@@ -181,6 +181,49 @@
     .query-val { font-size: 10px; color: #aaa; width: 32px; text-align: right; flex-shrink: 0; }
     .rising-badge { font-size: 8px; padding: 2px 6px; border-radius: 10px; background: var(--psi-pass-bg); color: var(--psi-pass-text); font-weight: 500; white-space: nowrap; }
     .empty-queries { font-size: 11px; color: #ccc; text-align: center; padding: 20px; }
+
+    /* ── AI & Search tab ── */
+    .as-table-wrap{border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:22px;}
+    .as-table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;}
+    .as-table th{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--pink);padding:9px 12px;border-bottom:1px solid var(--border);background:var(--blush);font-weight:500;text-align:left;}
+    .as-table td{padding:9px 12px;border-bottom:1px solid var(--border-light);vertical-align:middle;font-size:11px;color:var(--text-primary);}
+    .as-table tr:last-child td{border-bottom:none;}
+    .as-table tr:hover td{background:var(--blush);}
+    .diff-low{color:var(--psi-pass);}
+    .diff-med{color:var(--psi-warn);}
+    .diff-high{color:var(--psi-fail);}
+    .cited-self-url{font-size:10px;color:var(--psi-pass-text);}
+    .cited-others-wrap{display:flex;flex-wrap:wrap;gap:3px;}
+    .cited-other-url{font-size:10px;color:var(--pink);}
+    /* Intent groups */
+    .intent-section{margin-bottom:16px;}
+    .intent-header{font-size:9px;text-transform:uppercase;letter-spacing:2px;font-weight:500;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+    .intent-transactional{color:#047A3F;}
+    .intent-informational{color:#185FA5;}
+    .intent-navigational{color:#854F0B;}
+    .intent-pills{display:flex;flex-wrap:wrap;gap:8px;}
+    .intent-pill{font-size:11px;padding:5px 12px;border-radius:20px;border:1px solid;}
+    .intent-pill-transactional{background:#F0FBF5;border-color:#9FE1CB;color:#047A3F;}
+    .intent-pill-informational{background:#E6F1FB;border-color:#B5D4F4;color:#185FA5;}
+    .intent-pill-navigational{background:#FFF8ED;border-color:#FAC775;color:#8A5600;}
+    .intent-pill-sub{font-size:9px;color:#aaa;margin-left:4px;}
+    /* AI Mentions */
+    .platform-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;}
+    .platform-card{background:var(--blush);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;}
+    .platform-name{font-size:9px;color:var(--pink);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;font-weight:500;}
+    .platform-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+    .platform-stat-val{font-family:var(--font-serif);font-size:22px;font-weight:700;color:var(--text-primary);}
+    .platform-stat-label{font-size:9px;color:#aaa;text-transform:uppercase;letter-spacing:0.8px;}
+    .view-btn{width:100%;background:var(--wine);border:none;color:#fff;padding:7px;border-radius:20px;font-size:10px;cursor:pointer;font-weight:500;transition:background 0.15s;}
+    .view-btn:hover{background:var(--wine-mid);}
+    .citations-panel{border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;}
+    .citations-panel-hdr{background:var(--blush);padding:10px 16px;border-bottom:1px solid var(--border);font-size:9px;color:var(--pink);text-transform:uppercase;letter-spacing:1.5px;font-weight:500;}
+    .citation-item{padding:12px 16px;border-bottom:1px solid var(--border-light);}
+    .citation-item:last-child{border-bottom:none;}
+    .citation-q{font-size:11px;font-weight:500;color:var(--text-primary);margin-bottom:3px;}
+    .citation-url{font-size:10px;color:var(--pink);margin-bottom:3px;}
+    .citation-ctx{font-size:11px;color:var(--text-muted);line-height:1.5;font-style:italic;}
+    .citation-date{font-size:9px;color:#ccc;margin-top:3px;}
   </style>
 </head>
 <body>
@@ -190,7 +233,7 @@
     <div class="brand"><span class="brand-name">ODD</span><span class="brand-dash">-</span><span class="brand-it">it</span></div>
     <span class="brand-sub">Audit assistant</span>
   </div>
-  <div class="topbar-right">Freerange Creatives</div>
+  <div class="topbar-right">RUE'S TOOLS</div>
 </div>
 
 <div class="client-bar">
@@ -204,10 +247,9 @@
 
 <div class="main-tabs">
   <div class="tab active" data-tab="pagespeed">PageSpeed</div>
+  <div class="tab" data-tab="aisearch">AI & Search</div>
   <div class="tab" data-tab="trends">Google Trends</div>
-  <div class="tab" data-tab="search">Search Visibility</div>
-  <div class="tab" data-tab="geo">GEO / AI</div>
-  <div class="tab" data-tab="gap">Competitor Gap</div>
+  <div class="tab" data-tab="gap2">Competitor Gap</div>
 </div>
 
 <!-- PageSpeed tab -->
@@ -293,14 +335,30 @@
   </div>
 </div>
 
-<!-- Other tabs -->
-<div class="tab-panel" id="tab-search">
-  <div class="content"><div class="coming-soon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>Search visibility — coming soon</div></div>
+<!-- AI & Search tab -->
+<div class="tab-panel" id="tab-aisearch">
+  <div class="subtabs">
+    <div class="subtab active" data-subtab="organic">Organic Search</div>
+    <div class="subtab" data-subtab="aimentions">AI Mentions</div>
+  </div>
+
+  <!-- Organic Search subtab -->
+  <div class="subtab-panel active" id="subtab-organic">
+    <div class="content" id="content-organic">
+      <div class="loading-state"><div class="spinner"></div><span>Loading keyword data…</span></div>
+    </div>
+  </div>
+
+  <!-- AI Mentions subtab -->
+  <div class="subtab-panel" id="subtab-aimentions">
+    <div class="content" id="content-aimentions">
+      <div class="loading-state"><div class="spinner"></div><span>Loading AI mentions…</span></div>
+    </div>
+  </div>
 </div>
-<div class="tab-panel" id="tab-geo">
-  <div class="content"><div class="coming-soon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>GEO / AI visibility — coming soon</div></div>
-</div>
-<div class="tab-panel" id="tab-gap">
+
+<!-- Competitor Gap tab -->
+<div class="tab-panel" id="tab-gap2">
   <div class="content"><div class="coming-soon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Competitor gap — coming soon</div></div>
 </div>
 
@@ -326,10 +384,14 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 document.querySelectorAll('.subtab').forEach(st => {
   st.addEventListener('click', () => {
-    document.querySelectorAll('.subtab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.subtab-panel').forEach(p => p.classList.remove('active'));
+    const parentPanel = st.closest('.tab-panel');
+    parentPanel.querySelectorAll('.subtab').forEach(t => t.classList.remove('active'));
+    parentPanel.querySelectorAll('.subtab-panel').forEach(p => p.classList.remove('active'));
     st.classList.add('active');
     document.getElementById('subtab-' + st.dataset.subtab).classList.add('active');
+    // Lazy load AI & Search tab on first view
+    if (st.dataset.subtab === 'organic' && !window.aiSearchLoaded) loadAISearch();
+    if (st.dataset.subtab === 'aimentions' && !window.aiMentionsLoaded) loadAIMentions();
   });
 });
 
@@ -800,6 +862,258 @@ if (clientDomain) {
 }
 
 initKeywordRows();
+
+// ── AI & Search ───────────────────────────────────────────────────────────────
+window.aiSearchLoaded   = false;
+window.aiMentionsLoaded = false;
+let kwData = []; // stores keyword + intent + aio data
+
+// Trigger load when tab is clicked
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    if (tab.dataset.tab === 'aisearch' && !window.aiSearchLoaded) loadAISearch();
+  });
+});
+
+async function loadAISearch() {
+  window.aiSearchLoaded = true;
+  const el = document.getElementById('content-organic');
+
+  try {
+    // Step 1 — ranked keywords
+    const kwRes  = await fetch('/api/ranked-keywords', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: clientDomain })
+    });
+    const kwJson = await kwRes.json();
+    if (kwJson.error) throw new Error(kwJson.error);
+    const keywords = kwJson.keywords || [];
+    const kwStrings = keywords.map(k => k.keyword);
+
+    // Step 2 — AI Overview only (intent is on-demand)
+    const aioRes  = await fetch('/api/ai-overview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords: kwStrings })
+    });
+    const aioJson = await aioRes.json();
+
+    const aioMap = {};
+    (aioJson.results || []).forEach(r => aioMap[r.keyword] = r);
+
+    // Merge without intent for now
+    kwData = keywords.map(k => ({
+      ...k,
+      hasAIO:    aioMap[k.keyword]?.hasAIO    || false,
+      citations: aioMap[k.keyword]?.citations || [],
+      intent:    null
+    }));
+
+    el.innerHTML = buildOrganicSearch(kwData);
+
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">Failed to load keyword data: ${err.message}</div>`;
+  }
+}
+
+function diffClass(d) {
+  if (!d && d !== 0) return '';
+  if (d < 30) return 'diff-low';
+  if (d < 60) return 'diff-med';
+  return 'diff-high';
+}
+
+function buildOrganicSearch(data) {
+  const rows = data.map(k => {
+    const cpcStr = k.cpc ? `$${parseFloat(k.cpc).toFixed(2)}` : '—';
+    const volStr = k.volume ? k.volume.toLocaleString() : '—';
+    const diffStr = k.difficulty ?? '—';
+    const aioStr  = k.hasAIO ? 'Yes' : 'No';
+    const aioColor = k.hasAIO ? 'color:var(--psi-pass-text);' : 'color:#aaa;';
+
+    let citationHtml = '';
+    if (!k.hasAIO) {
+      citationHtml = '<span style="color:#ccc;font-size:10px;">No AI Overview</span>';
+    } else if (k.citations.some(c => c.includes(clientDomain.replace(/^www\./, '')))) {
+      const ownUrl = k.citations.find(c => c.includes(clientDomain.replace(/^www\./, '')));
+      citationHtml = `<span class="cited-self-url">✓ ${ownUrl}</span>`;
+    } else {
+      citationHtml = `<div class="cited-others-wrap">${k.citations.map(c =>
+        `<span class="cited-other-url">${c}</span>`
+      ).join('<span style="color:#ccc;margin:0 2px;">·</span>')}</div>`;
+    }
+
+    return `<tr>
+      <td style="font-weight:500;">${k.keyword}</td>
+      <td>#${k.rank}</td>
+      <td>${volStr}</td>
+      <td>${cpcStr}</td>
+      <td class="${diffClass(k.difficulty)}">${diffStr}</td>
+      <td style="${aioColor}">${aioStr}</td>
+      <td>${citationHtml}</td>
+    </tr>`;
+  }).join('');
+
+  // Intent groups
+  const groups = { transactional: [], informational: [], navigational: [] };
+  data.forEach(k => { if (groups[k.intent]) groups[k.intent].push(k); });
+
+  const intentLabels = { transactional: 'Transactional', informational: 'Informational', navigational: 'Navigational' };
+  const intentSections = Object.entries(groups).filter(([,kws]) => kws.length).map(([intent, kws]) => `
+    <div class="intent-section">
+      <div class="intent-header intent-${intent}">${intentLabels[intent]} <span style="color:#ccc;font-weight:400;">(${kws.length})</span></div>
+      <div class="intent-pills">
+        ${kws.map(k => `<div class="intent-pill intent-pill-${intent}">${k.keyword}<span class="intent-pill-sub">#${k.rank}</span></div>`).join('')}
+      </div>
+    </div>`).join('');
+
+  return `
+    <div class="eyebrow">Organic search</div>
+    <div class="section-title">Search visibility</div>
+    <div class="section-sub">Top 10 keywords ${clientDomain} ranks for · ordered by traffic value</div>
+
+    <div class="as-table-wrap">
+      <table class="as-table">
+        <thead><tr>
+          <th style="width:28%;">Keyword</th>
+          <th style="width:8%;">Rank</th>
+          <th style="width:10%;">Volume</th>
+          <th style="width:8%;">CPC</th>
+          <th style="width:8%;">Difficulty</th>
+          <th style="width:8%;">AI Overview</th>
+          <th>AI citations</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="divider"></div>
+    <div class="eyebrow" style="margin-bottom:10px;">Keyword intent</div>
+    <div class="ai-prompt-card" id="intent-prompt">
+      <div class="ai-prompt-text">
+        <strong>View keywords by intent?</strong>
+        Claude will classify each keyword as transactional, informational, or navigational.
+      </div>
+      <button class="ai-btn" onclick="triggerIntent()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        Classify intent
+      </button>
+    </div>
+    <div id="intent-results" style="display:none;"></div>`;
+}
+
+async function loadAIMentions() {
+  window.aiMentionsLoaded = true;
+  const el = document.getElementById('content-aimentions');
+
+  try {
+    const res  = await fetch('/api/llm-mentions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: clientDomain })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    el.innerHTML = buildAIMentions(data.results || []);
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">Failed to load AI mentions: ${err.message}</div>`;
+  }
+}
+
+const platformMeta = {
+  google_ai_overview: { label: 'Google AI Overviews' },
+  chat_gpt:           { label: 'ChatGPT' },
+  perplexity:         { label: 'Perplexity' }
+};
+let activeCitationPlatform = null;
+
+function buildAIMentions(results) {
+  const cards = results.map(r => {
+    const meta = platformMeta[r.platform] || { label: r.platform };
+    return `
+      <div class="platform-card">
+        <div class="platform-name">${meta.label}</div>
+        <div class="platform-stats">
+          <div><div class="platform-stat-val">${r.mentions}</div><div class="platform-stat-label">Mentions</div></div>
+          <div><div class="platform-stat-val">${r.citations?.length || 0}</div><div class="platform-stat-label">Citations</div></div>
+        </div>
+        <button class="view-btn" onclick="showCitations('${r.platform}')">View citations</button>
+      </div>`;
+  }).join('');
+
+  window._mentionsData = results;
+
+  return `
+    <div class="eyebrow">AI mentions</div>
+    <div class="section-title">AI visibility</div>
+    <div class="section-sub">${clientDomain} appearances in AI-generated responses · DataForSEO LLM Mentions</div>
+    <div class="platform-cards">${cards}</div>
+    <div id="citations-panel-wrap"></div>`;
+}
+
+function showCitations(platform) {
+  const wrap = document.getElementById('citations-panel-wrap');
+  if (!wrap) return;
+  if (activeCitationPlatform === platform) {
+    wrap.innerHTML = '';
+    activeCitationPlatform = null;
+    return;
+  }
+  activeCitationPlatform = platform;
+  const data = (window._mentionsData || []).find(r => r.platform === platform);
+  const meta = platformMeta[platform] || { label: platform };
+  if (!data?.citations?.length) {
+    wrap.innerHTML = `<div class="citations-panel"><div class="citations-panel-hdr">${meta.label} citations</div><div style="padding:16px;font-size:11px;color:#aaa;text-align:center;">No citations found</div></div>`;
+    return;
+  }
+  const items = data.citations.map(c => `
+    <div class="citation-item">
+      <div class="citation-q">${c.question || '—'}</div>
+      <div class="citation-url">${c.url}</div>
+      ${c.context ? `<div class="citation-ctx">"${c.context}"</div>` : ''}
+      ${c.date ? `<div class="citation-date">${c.date}</div>` : ''}
+    </div>`).join('');
+  wrap.innerHTML = `<div class="citations-panel"><div class="citations-panel-hdr">${meta.label} citations</div>${items}</div>`;
+}
+
+
+async function triggerIntent() {
+  const btn     = document.querySelector('#intent-prompt .ai-btn');
+  const results = document.getElementById('intent-results');
+  btn.disabled  = true;
+  btn.innerHTML = '<div class="spinner-sm"></div> Classifying…';
+
+  try {
+    const kwStrings = kwData.map(k => k.keyword);
+    const res       = await fetch('/api/classify-intent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords: kwStrings })
+    });
+    const intentJson = await res.json();
+    const intentMap  = {};
+    (Array.isArray(intentJson) ? intentJson : []).forEach(r => intentMap[r.keyword] = r.intent);
+    kwData.forEach(k => k.intent = intentMap[k.keyword] || 'informational');
+
+    const groups = { transactional: [], informational: [], navigational: [] };
+    kwData.forEach(k => { if (groups[k.intent]) groups[k.intent].push(k); });
+    const intentLabels = { transactional: 'Transactional', informational: 'Informational', navigational: 'Navigational' };
+    results.innerHTML = Object.entries(groups).filter(([,kws]) => kws.length).map(([intent, kws]) => `
+      <div class="intent-section">
+        <div class="intent-header intent-${intent}">${intentLabels[intent]} <span style="color:#ccc;font-weight:400;">(${kws.length})</span></div>
+        <div class="intent-pills">
+          ${kws.map(k => `<div class="intent-pill intent-pill-${intent}">${k.keyword}<span class="intent-pill-sub">#${k.rank}</span></div>`).join('')}
+        </div>
+      </div>`).join('');
+
+    document.getElementById('intent-prompt').style.display = 'none';
+    results.style.display = 'block';
+
+  } catch(e) {
+    btn.disabled = false;
+    btn.innerHTML = 'Classify intent';
+  }
+}
+
 </script>
 </body>
-</html>
+</html>s

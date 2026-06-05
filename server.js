@@ -201,6 +201,188 @@ app.post('/api/trends', async (req, res) => {
   }
 });
 
+
+// ── Ranked keywords (DataForSEO Labs) ────────────────────────────────────────
+app.post('/api/ranked-keywords', async (req, res) => {
+  const { domain, locationCode, languageCode } = req.body;
+  if (!domain) return res.status(400).json({ error: 'domain required' });
+
+  try {
+    const cleanDomain = domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/.*/,'');
+    const payload = [{
+      target:         cleanDomain,
+      location_code:  locationCode || 2710,
+      language_code:  languageCode || 'en',
+      filters:        [['ranked_serp_element.serp_item.type', '=', 'organic']],
+      order_by:       ['ranked_serp_element.serp_item.etv,desc'],
+      limit:          10
+    }];
+
+    const response = await axios.post(
+      'https://api.dataforseo.com/v3/dataforseo_labs/google/ranked_keywords/live',
+      payload,
+      { headers: dfsHeaders }
+    );
+
+    const items = response.data.tasks?.[0]?.result?.[0]?.items || [];
+    const keywords = items.map(item => ({
+      keyword:    item.keyword_data?.keyword,
+      rank:       item.ranked_serp_element?.serp_item?.rank_absolute,
+      volume:     item.keyword_data?.keyword_info?.search_volume,
+      cpc:        item.keyword_data?.keyword_info?.cpc,
+      difficulty: item.keyword_data?.keyword_properties?.keyword_difficulty
+    })).filter(k => k.keyword);
+
+    res.json({ keywords });
+
+  } catch (err) {
+    console.error('Ranked keywords error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data?.error?.message || err.message });
+  }
+});
+
+// ── AI Overview check (DataForSEO SERP) ──────────────────────────────────────
+app.post('/api/ai-overview', async (req, res) => {
+  const { keywords, locationCode, languageCode } = req.body;
+  if (!keywords?.length) return res.status(400).json({ error: 'keywords required' });
+
+  try {
+    // One SERP call per keyword — run in parallel
+    const results = await Promise.all(keywords.map(async kw => {
+      try {
+        const payload = [{
+          keyword:       kw,
+          location_code: locationCode || 2710,
+          language_code: languageCode || 'en',
+          device:        'desktop',
+          os:            'windows'
+        }];
+
+        const response = await axios.post(
+          'https://api.dataforseo.com/v3/serp/google/organic/live/advanced',
+          payload,
+          { headers: dfsHeaders }
+        );
+
+        const items = response.data.tasks?.[0]?.result?.[0]?.items || [];
+
+        // Find AI Overview item
+        const aioItem = items.find(i => i.type === 'ai_overview');
+        const hasAIO  = !!aioItem;
+
+        // Extract cited URLs from AI Overview
+        const citations = hasAIO
+          ? (aioItem.references || aioItem.items || [])
+              .map(r => r.url || r.source?.url || r.domain)
+              .filter(Boolean)
+              .slice(0, 5)
+          : [];
+
+        return { keyword: kw, hasAIO, citations };
+
+      } catch {
+        return { keyword: kw, hasAIO: false, citations: [] };
+      }
+    }));
+
+    res.json({ results });
+
+  } catch (err) {
+    console.error('AI Overview error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data?.error?.message || err.message });
+  }
+});
+
+// ── Intent classification (Anthropic) ────────────────────────────────────────
+app.post('/api/classify-intent', async (req, res) => {
+  const { keywords } = req.body;
+  if (!keywords?.length) return res.status(400).json({ error: 'keywords required' });
+
+  const prompt = `Classify each keyword by search intent. Return ONLY a valid JSON array, no markdown:
+[{"keyword":"...","intent":"transactional|informational|navigational"}]
+
+Keywords: ${JSON.stringify(keywords)}
+
+Rules:
+- transactional: ready to buy, book, visit, purchase
+- navigational: looking for a specific brand/site
+- informational: researching, learning, comparing`;
+
+  try {
+    const response = await axios.post('https://api.anthropic.com/v1/messages', {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 800,
+      messages: [{ role: 'user', content: prompt }]
+    }, {
+      headers: {
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      }
+    });
+
+    const text  = response.data.content[0].text;
+    const clean = text.replace(/```json|```/g, '').trim();
+    res.json(JSON.parse(clean));
+
+  } catch (err) {
+    console.error('Intent error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── LLM Mentions (DataForSEO) ─────────────────────────────────────────────────
+app.post('/api/llm-mentions', async (req, res) => {
+  const { domain, locationCode, languageCode } = req.body;
+  if (!domain) return res.status(400).json({ error: 'domain required' });
+
+  try {
+    const cleanDomain = domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/.*/,'');
+
+    // Fetch mentions for each platform
+    const platforms = ['google_ai_overview', 'chat_gpt', 'perplexity'];
+    const results   = await Promise.all(platforms.map(async platform => {
+      try {
+        const payload = [{
+          target:        cleanDomain,
+          target_type:   'domain',
+          platform_type: platform,
+          location_code: locationCode || 2710,
+          language_code: languageCode || 'en',
+          limit:         10
+        }];
+
+        const response = await axios.post(
+          'https://api.dataforseo.com/v3/content_analysis/search/live',
+          payload,
+          { headers: dfsHeaders }
+        );
+
+        const items = response.data.tasks?.[0]?.result?.[0]?.items || [];
+        const total = response.data.tasks?.[0]?.result?.[0]?.total_count || 0;
+
+        const citations = items.map(item => ({
+          question: item.title || item.snippet_query || '',
+          url:      item.url  || item.page_url || '',
+          context:  item.snippet || item.content_info?.main_title || '',
+          date:     item.fetch_time || item.crawl_time || ''
+        })).filter(c => c.url);
+
+        return { platform, mentions: total, citations };
+
+      } catch {
+        return { platform, mentions: 0, citations: [] };
+      }
+    }));
+
+    res.json({ results });
+
+  } catch (err) {
+    console.error('LLM mentions error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data?.error?.message || err.message });
+  }
+});
+
 // ── Serve pages ─────────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/',      (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
