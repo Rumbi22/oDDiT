@@ -14,6 +14,11 @@ const GOOGLE_API_KEY    = process.env.GOOGLE_API_KEY;
 const DATAFORSEO_CREDS  = process.env.DATAFORSEO_CREDS;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
+const dfsHeaders = {
+  'Authorization': `Basic ${DATAFORSEO_CREDS}`,
+  'Content-Type':  'application/json'
+};
+
 // ── PageSpeed Insights ────────────────────────────────────────────────────────
 app.get('/api/pagespeed', async (req, res) => {
   const { url, strategy = 'mobile' } = req.query;
@@ -97,78 +102,77 @@ type must be either "issue" or "gap".`;
   }
 });
 
-// ── Google Trends autocomplete ────────────────────────────────────────────────
-// Returns topic suggestions for a keyword — same as the dropdown in Google Trends UI
+// ── Trends autocomplete — unofficial library, fails silently ──────────────────
 app.get('/api/trends/autocomplete', async (req, res) => {
   const { keyword } = req.query;
-  if (!keyword) return res.status(400).json({ error: 'keyword required' });
+  if (!keyword) return res.json([]);
 
   try {
     const raw  = await googleTrends.autoComplete({ keyword });
     const data = JSON.parse(raw);
-
-    // Extract suggestions — each has a title, type (e.g. "Liqueur"), and mid (topic ID)
     const suggestions = (data.default?.topics || []).map(t => ({
-      title:   t.title,
-      type:    t.type,    // "Search term", "Liqueur", "Topic" etc.
-      mid:     t.mid      // Google's internal topic ID e.g. /m/02rjjll
+      title: t.title,
+      type:  t.type,
+      mid:   t.mid
     }));
-
     res.json(suggestions);
-
   } catch (err) {
-    console.error('Autocomplete error:', err.message);
-    res.status(500).json({ error: err.message });
+    // Fail silently — autocomplete is optional
+    console.warn('Autocomplete unavailable (expected on hosted servers):', err.message);
+    res.json([]);
   }
 });
 
-// ── Google Trends data ────────────────────────────────────────────────────────
+// ── Google Trends data — DataForSEO Live ─────────────────────────────────────
 app.post('/api/trends', async (req, res) => {
-  const { keywords, startTime, endTime, geo } = req.body;
-  // keywords is array of { keyword, mid } — mid is optional topic ID
+  const { keywords, dateFrom, dateTo, locationCode } = req.body;
   if (!keywords || !keywords.length) return res.status(400).json({ error: 'keywords required' });
 
   try {
-    const start = new Date(startTime || Date.now() - 365 * 24 * 60 * 60 * 1000);
-    const end   = new Date(endTime   || Date.now());
+    // keywords is array of { keyword, mid }
+    // DataForSEO doesn't support topic mids — use plain keyword text
+    const kwStrings = keywords.map(k => k.keyword || k);
 
-    // Build keyword array — use mid (topic ID) if available, otherwise plain keyword
-    const kwArray = keywords.map(k => k.mid ? k.mid : k.keyword);
+    const taskPayload = [{
+      keywords:      kwStrings,
+      date_from:     dateFrom     || new Date(Date.now() - 365*24*60*60*1000).toISOString().split('T')[0],
+      date_to:       dateTo       || new Date().toISOString().split('T')[0],
+      location_code: locationCode || 2710, // South Africa default
+      type:          'web'
+    }];
 
-    // Interest over time
-    const interestRaw  = await googleTrends.interestOverTime({
-      keyword:   kwArray,
-      startTime: start,
-      endTime:   end,
-      geo:       geo || 'ZA'
-    });
-    const interestData = JSON.parse(interestRaw).default?.timelineData || [];
+    const response = await axios.post(
+      'https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live',
+      taskPayload,
+      { headers: dfsHeaders }
+    );
 
-    // Related queries per keyword
-    const relatedData = await Promise.all(keywords.map(async (k, i) => {
-      try {
-        const raw    = await googleTrends.relatedQueries({
-          keyword:   kwArray[i],
-          startTime: start,
-          endTime:   end,
-          geo:       geo || 'ZA'
-        });
-        const ranked = JSON.parse(raw).default?.rankedList || [];
-        return {
-          keyword: k.keyword,
-          top:     (ranked[0]?.rankedKeyword || []).slice(0, 10).map(q => ({ query: q.query, value: q.value })),
-          rising:  (ranked[1]?.rankedKeyword || []).slice(0, 10).map(q => ({ query: q.query, value: q.value }))
-        };
-      } catch {
-        return { keyword: k.keyword, top: [], rising: [] };
-      }
+    const result = response.data.tasks?.[0]?.result?.[0];
+    if (!result) return res.status(500).json({ error: 'No data returned from DataForSEO' });
+
+    // Interest over time — extract graph data points
+    const graphItem  = result.items?.find(i => i.type === 'google_trends_graph');
+    const interestData = (graphItem?.data || []).map(point => ({
+      formattedTime: point.date_from_period,
+      values:        kwStrings.map((_, idx) => point.values?.[idx] ?? 0)
     }));
 
-    res.json({ interestData, relatedData, keywords: keywords.map(k => k.keyword) });
+    // Related queries per keyword
+    const relatedData = kwStrings.map(kw => {
+      const topItem    = result.items?.find(i => i.type === 'google_trends_queries_list' && i.title === kw && i.query_type === 'top');
+      const risingItem = result.items?.find(i => i.type === 'google_trends_queries_list' && i.title === kw && i.query_type === 'rising');
+      return {
+        keyword: kw,
+        top:     (topItem?.data    || []).slice(0, 10).map(q => ({ query: q.query, value: q.value })),
+        rising:  (risingItem?.data || []).slice(0, 10).map(q => ({ query: q.query, value: q.value }))
+      };
+    });
+
+    res.json({ interestData, relatedData, keywords: kwStrings });
 
   } catch (err) {
-    console.error('Trends error:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('Trends error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data?.error?.message || err.message });
   }
 });
 
