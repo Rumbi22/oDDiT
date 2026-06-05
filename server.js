@@ -1,8 +1,9 @@
 require('dotenv').config();
-const express = require('express');
-const axios   = require('axios');
-const cors    = require('cors');
-const path    = require('path');
+const express      = require('express');
+const axios        = require('axios');
+const cors         = require('cors');
+const path         = require('path');
+const googleTrends = require('google-trends-api');
 
 const app = express();
 app.use(cors());
@@ -10,7 +11,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const GOOGLE_API_KEY    = process.env.GOOGLE_API_KEY;
-const DATAFORSEO_CREDS  = process.env.DATAFORSEO_CREDS; // base64 login:password
+const DATAFORSEO_CREDS  = process.env.DATAFORSEO_CREDS;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 // ── PageSpeed Insights ────────────────────────────────────────────────────────
@@ -27,40 +28,30 @@ app.get('/api/pagespeed', async (req, res) => {
     ['performance', 'accessibility', 'best-practices', 'seo'].forEach(c => psiUrl.searchParams.append('category', c));
 
     const response = await axios.get(psiUrl.toString());
-
-    const lhr       = response.data.lighthouseResult;
-    const cats      = lhr.categories;
-    const audits    = lhr.audits;
+    const lhr    = response.data.lighthouseResult;
+    const cats   = lhr.categories;
+    const audits = lhr.audits;
 
     const scores = {
-      performance:   Math.round((cats.performance?.score   || 0) * 100),
-      accessibility: Math.round((cats.accessibility?.score || 0) * 100),
-      seo:           Math.round((cats.seo?.score           || 0) * 100),
+      performance:   Math.round((cats.performance?.score       || 0) * 100),
+      accessibility: Math.round((cats.accessibility?.score     || 0) * 100),
+      seo:           Math.round((cats.seo?.score               || 0) * 100),
       bestPractices: Math.round((cats['best-practices']?.score || 0) * 100)
     };
 
     const cwv = {
-      lcp: { label: 'Largest Contentful Paint', desc: 'How long until the biggest visible element fully loads',         value: audits['largest-contentful-paint']?.displayValue,  score: audits['largest-contentful-paint']?.score },
-      inp: { label: 'Interaction to Next Paint', desc: 'How quickly the page reacts after a user tap or click',          value: audits['interaction-to-next-paint']?.displayValue || audits['max-potential-fid']?.displayValue, score: audits['interaction-to-next-paint']?.score ?? audits['max-potential-fid']?.score },
-      cls: { label: 'Cumulative Layout Shift',   desc: 'How much page elements unexpectedly move during load',           value: audits['cumulative-layout-shift']?.displayValue,    score: audits['cumulative-layout-shift']?.score },
-      fcp: { label: 'First Contentful Paint',    desc: 'When the first text or image appears on screen',                 value: audits['first-contentful-paint']?.displayValue,     score: audits['first-contentful-paint']?.score },
-      tti: { label: 'Time to Interactive',       desc: 'When the page is fully interactive and responds to all input',   value: audits['interactive']?.displayValue,                score: audits['interactive']?.score },
-      si:  { label: 'Speed Index',               desc: 'How quickly content is visually populated on screen',            value: audits['speed-index']?.displayValue,                score: audits['speed-index']?.score }
+      lcp: { label: 'Largest Contentful Paint', desc: 'How long until the biggest visible element fully loads',       value: audits['largest-contentful-paint']?.displayValue, score: audits['largest-contentful-paint']?.score },
+      inp: { label: 'Interaction to Next Paint', desc: 'How quickly the page reacts after a user tap or click',        value: audits['interaction-to-next-paint']?.displayValue || audits['max-potential-fid']?.displayValue, score: audits['interaction-to-next-paint']?.score ?? audits['max-potential-fid']?.score },
+      cls: { label: 'Cumulative Layout Shift',   desc: 'How much page elements unexpectedly move during load',         value: audits['cumulative-layout-shift']?.displayValue,  score: audits['cumulative-layout-shift']?.score },
+      fcp: { label: 'First Contentful Paint',    desc: 'When the first text or image appears on screen',               value: audits['first-contentful-paint']?.displayValue,   score: audits['first-contentful-paint']?.score },
+      tti: { label: 'Time to Interactive',       desc: 'When the page is fully interactive and responds to all input', value: audits['interactive']?.displayValue,              score: audits['interactive']?.score },
+      si:  { label: 'Speed Index',               desc: 'How quickly content is visually populated on screen',          value: audits['speed-index']?.displayValue,              score: audits['speed-index']?.score }
     };
 
-    // CWV overall pass = LCP + INP + CLS all >= 0.9
-    const cwvPass = (cwv.lcp.score >= 0.9) && (cwv.inp.score >= 0.9) && (cwv.cls.score >= 0.9);
-
+    const cwvPass    = (cwv.lcp.score >= 0.9) && (cwv.inp.score >= 0.9) && (cwv.cls.score >= 0.9);
     const screenshot = audits['final-screenshot']?.details?.data || null;
 
-    // Top failing audits for key findings
-    const findings = Object.values(audits)
-      .filter(a => a.score !== null && a.score !== undefined && a.score < 0.9 && a.details?.type !== 'debugdata' && a.title)
-      .sort((a, b) => (a.score ?? 1) - (b.score ?? 1))
-      .slice(0, 6)
-      .map(a => ({ id: a.id, title: a.title, description: a.description, score: a.score, displayValue: a.displayValue }));
-
-    res.json({ url, strategy, scores, cwv, cwvPass, screenshot, findings });
+    res.json({ url, strategy, scores, cwv, cwvPass, screenshot });
 
   } catch (err) {
     console.error('PageSpeed error:', err.response?.data || err.message);
@@ -68,7 +59,7 @@ app.get('/api/pagespeed', async (req, res) => {
   }
 });
 
-// ── AI Key Findings (Anthropic) ───────────────────────────────────────────────
+// ── AI Key Findings — on demand only ─────────────────────────────────────────
 app.post('/api/findings', async (req, res) => {
   const { clientDomain, clientData, competitorResults } = req.body;
 
@@ -102,6 +93,81 @@ type must be either "issue" or "gap".`;
 
   } catch (err) {
     console.error('Anthropic error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Google Trends autocomplete ────────────────────────────────────────────────
+// Returns topic suggestions for a keyword — same as the dropdown in Google Trends UI
+app.get('/api/trends/autocomplete', async (req, res) => {
+  const { keyword } = req.query;
+  if (!keyword) return res.status(400).json({ error: 'keyword required' });
+
+  try {
+    const raw  = await googleTrends.autoComplete({ keyword });
+    const data = JSON.parse(raw);
+
+    // Extract suggestions — each has a title, type (e.g. "Liqueur"), and mid (topic ID)
+    const suggestions = (data.default?.topics || []).map(t => ({
+      title:   t.title,
+      type:    t.type,    // "Search term", "Liqueur", "Topic" etc.
+      mid:     t.mid      // Google's internal topic ID e.g. /m/02rjjll
+    }));
+
+    res.json(suggestions);
+
+  } catch (err) {
+    console.error('Autocomplete error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Google Trends data ────────────────────────────────────────────────────────
+app.post('/api/trends', async (req, res) => {
+  const { keywords, startTime, endTime, geo } = req.body;
+  // keywords is array of { keyword, mid } — mid is optional topic ID
+  if (!keywords || !keywords.length) return res.status(400).json({ error: 'keywords required' });
+
+  try {
+    const start = new Date(startTime || Date.now() - 365 * 24 * 60 * 60 * 1000);
+    const end   = new Date(endTime   || Date.now());
+
+    // Build keyword array — use mid (topic ID) if available, otherwise plain keyword
+    const kwArray = keywords.map(k => k.mid ? k.mid : k.keyword);
+
+    // Interest over time
+    const interestRaw  = await googleTrends.interestOverTime({
+      keyword:   kwArray,
+      startTime: start,
+      endTime:   end,
+      geo:       geo || 'ZA'
+    });
+    const interestData = JSON.parse(interestRaw).default?.timelineData || [];
+
+    // Related queries per keyword
+    const relatedData = await Promise.all(keywords.map(async (k, i) => {
+      try {
+        const raw    = await googleTrends.relatedQueries({
+          keyword:   kwArray[i],
+          startTime: start,
+          endTime:   end,
+          geo:       geo || 'ZA'
+        });
+        const ranked = JSON.parse(raw).default?.rankedList || [];
+        return {
+          keyword: k.keyword,
+          top:     (ranked[0]?.rankedKeyword || []).slice(0, 10).map(q => ({ query: q.query, value: q.value })),
+          rising:  (ranked[1]?.rankedKeyword || []).slice(0, 10).map(q => ({ query: q.query, value: q.value }))
+        };
+      } catch {
+        return { keyword: k.keyword, top: [], rising: [] };
+      }
+    }));
+
+    res.json({ interestData, relatedData, keywords: keywords.map(k => k.keyword) });
+
+  } catch (err) {
+    console.error('Trends error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
