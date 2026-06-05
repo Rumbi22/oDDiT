@@ -210,12 +210,19 @@ app.post('/api/ranked-keywords', async (req, res) => {
   try {
     const cleanDomain = domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/.*/,'');
     const payload = [{
-      target:         cleanDomain,
-      location_code:  locationCode || 2710,
-      language_code:  languageCode || 'en',
-      filters:        [['ranked_serp_element.serp_item.type', '=', 'organic']],
-      order_by:       ['ranked_serp_element.serp_item.etv,desc'],
-      limit:          10
+      target:             cleanDomain,
+      location_code:      locationCode || 2710,
+      language_code:      languageCode || 'en',
+      load_rank_absolute: true,
+      filters: [
+        ['keyword_data.keyword_info.search_volume', '>', 0],
+        'and',
+        [['ranked_serp_element.serp_item.type', '<>', 'paid'],
+         'or',
+         ['ranked_serp_element.serp_item.is_paid', '=', false]]
+      ],
+      order_by: ['ranked_serp_element.serp_item.etv,desc'],
+      limit:    10
     }];
 
     const response = await axios.post(
@@ -223,6 +230,9 @@ app.post('/api/ranked-keywords', async (req, res) => {
       payload,
       { headers: dfsHeaders }
     );
+
+    console.log('Ranked KW status:', response.data.tasks?.[0]?.status_message);
+    console.log('Ranked KW items:', response.data.tasks?.[0]?.result?.[0]?.items?.length);
 
     const items = response.data.tasks?.[0]?.result?.[0]?.items || [];
     const keywords = items.map(item => ({
