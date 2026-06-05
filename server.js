@@ -157,32 +157,40 @@ app.post('/api/trends', async (req, res) => {
       dataLength: i.data?.length, firstPoint: i.data?.[0]
     })), null, 2));
 
-    // Interest over time
+    // Interest over time — date field is date_from
     const graphItem    = result.items?.find(i => i.type === 'google_trends_graph');
     const interestData = (graphItem?.data || []).map(point => ({
-      formattedTime: point.date_from_period || point.date,
+      formattedTime: point.date_from,
       values:        kwStrings.map((_, idx) => point.values?.[idx] ?? 0)
     }));
 
-    // Related queries — case-insensitive title match
-    const relatedData = kwStrings.map(kw => {
-      const kwLower    = kw.toLowerCase();
-      const topItem    = result.items?.find(i =>
-        i.type === 'google_trends_queries_list' &&
-        i.title?.toLowerCase() === kwLower &&
-        i.query_type === 'top'
-      );
-      const risingItem = result.items?.find(i =>
-        i.type === 'google_trends_queries_list' &&
-        i.title?.toLowerCase() === kwLower &&
-        i.query_type === 'rising'
-      );
-      return {
-        keyword: kw,
-        top:     (topItem?.data    || []).slice(0, 10).map(q => ({ query: q.query, value: q.value })),
-        rising:  (risingItem?.data || []).slice(0, 10).map(q => ({ query: q.query, value: q.value }))
-      };
-    });
+    // Related queries — separate API call per keyword
+    const relatedData = await Promise.all(kwStrings.map(async kw => {
+      try {
+        const relPayload = [{
+          keyword:       kw,
+          date_from:     dateFrom || new Date(Date.now() - 365*24*60*60*1000).toISOString().split('T')[0],
+          date_to:       dateTo   || new Date().toISOString().split('T')[0],
+          location_code: locationCode || 2710,
+          type:          'web'
+        }];
+        const relRes    = await axios.post(
+          'https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live',
+          relPayload,
+          { headers: dfsHeaders }
+        );
+        const relResult = relRes.data.tasks?.[0]?.result?.[0];
+        const topItem    = relResult?.items?.find(i => i.type === 'google_trends_queries_list' && i.query_type === 'top');
+        const risingItem = relResult?.items?.find(i => i.type === 'google_trends_queries_list' && i.query_type === 'rising');
+        return {
+          keyword: kw,
+          top:     (topItem?.data    || []).slice(0, 10).map(q => ({ query: q.query, value: q.value })),
+          rising:  (risingItem?.data || []).slice(0, 10).map(q => ({ query: q.query, value: q.value }))
+        };
+      } catch {
+        return { keyword: kw, top: [], rising: [] };
+      }
+    }));
 
     res.json({ interestData, relatedData, keywords: kwStrings });
 
