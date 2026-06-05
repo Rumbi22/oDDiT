@@ -150,17 +150,33 @@ app.post('/api/trends', async (req, res) => {
     const result = response.data.tasks?.[0]?.result?.[0];
     if (!result) return res.status(500).json({ error: 'No data returned from DataForSEO' });
 
-    // Interest over time — extract graph data points
-    const graphItem  = result.items?.find(i => i.type === 'google_trends_graph');
+    // Debug log — so we can see the real structure coming back
+    console.log('DFS task status:', response.data.tasks?.[0]?.status_message);
+    console.log('DFS items:', JSON.stringify(result.items?.map(i => ({
+      type: i.type, title: i.title, query_type: i.query_type,
+      dataLength: i.data?.length, firstPoint: i.data?.[0]
+    })), null, 2));
+
+    // Interest over time
+    const graphItem    = result.items?.find(i => i.type === 'google_trends_graph');
     const interestData = (graphItem?.data || []).map(point => ({
-      formattedTime: point.date_from_period,
+      formattedTime: point.date_from_period || point.date,
       values:        kwStrings.map((_, idx) => point.values?.[idx] ?? 0)
     }));
 
-    // Related queries per keyword
+    // Related queries — case-insensitive title match
     const relatedData = kwStrings.map(kw => {
-      const topItem    = result.items?.find(i => i.type === 'google_trends_queries_list' && i.title === kw && i.query_type === 'top');
-      const risingItem = result.items?.find(i => i.type === 'google_trends_queries_list' && i.title === kw && i.query_type === 'rising');
+      const kwLower    = kw.toLowerCase();
+      const topItem    = result.items?.find(i =>
+        i.type === 'google_trends_queries_list' &&
+        i.title?.toLowerCase() === kwLower &&
+        i.query_type === 'top'
+      );
+      const risingItem = result.items?.find(i =>
+        i.type === 'google_trends_queries_list' &&
+        i.title?.toLowerCase() === kwLower &&
+        i.query_type === 'rising'
+      );
       return {
         keyword: kw,
         top:     (topItem?.data    || []).slice(0, 10).map(q => ({ query: q.query, value: q.value })),
