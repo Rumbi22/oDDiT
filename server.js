@@ -12,6 +12,7 @@ app.use(express.json());
 const GOOGLE_API_KEY    = process.env.GOOGLE_API_KEY;
 const DATAFORSEO_CREDS  = process.env.DATAFORSEO_CREDS;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const OPENAI_API_KEY    = process.env.OPEN_AI_KEY;
 
 const dfsHeaders = {
   'Authorization': `Basic ${DATAFORSEO_CREDS}`,
@@ -19,7 +20,14 @@ const dfsHeaders = {
 };
 
 function cleanDomain(d) {
-  return d.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/.*/,'').toLowerCase();
+  return d.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\?.*/,'').replace(/\/.*/,'').toLowerCase();
+}
+
+function cleanUrl(url) {
+  try {
+    const u = new URL(url.startsWith('http') ? url : 'https://' + url);
+    return (u.hostname.replace(/^www\./, '') + u.pathname).replace(/\/$/, '');
+  } catch { return url.replace(/^https?:\/\/(www\.)?/, '').split('?')[0]; }
 }
 
 // ── PageSpeed Insights ────────────────────────────────────────────────────────
@@ -27,16 +35,15 @@ app.get('/api/pagespeed', async (req, res) => {
   const { url, strategy = 'mobile' } = req.query;
   if (!url) return res.status(400).json({ error: 'url required' });
   try {
-    const cleanUrl = `https://${url.replace(/^https?:\/\//i,'').replace(/^www\./i,'')}`;
+    const cleanUrl2 = `https://${url.replace(/^https?:\/\//i,'').replace(/^www\./i,'')}`;
     const psiUrl = new URL('https://www.googleapis.com/pagespeedonline/v5/runPagespeed');
-    psiUrl.searchParams.set('url', cleanUrl);
+    psiUrl.searchParams.set('url', cleanUrl2);
     psiUrl.searchParams.set('strategy', strategy);
     psiUrl.searchParams.set('key', GOOGLE_API_KEY);
     ['performance','accessibility','best-practices','seo'].forEach(c => psiUrl.searchParams.append('category', c));
     const response = await axios.get(psiUrl.toString());
-    const lhr    = response.data.lighthouseResult;
-    const cats   = lhr.categories;
-    const audits = lhr.audits;
+    const lhr = response.data.lighthouseResult;
+    const cats = lhr.categories, audits = lhr.audits;
     const scores = {
       performance:   Math.round((cats.performance?.score       || 0) * 100),
       accessibility: Math.round((cats.accessibility?.score     || 0) * 100),
@@ -63,28 +70,26 @@ app.get('/api/pagespeed', async (req, res) => {
 // ── AI Key Findings ───────────────────────────────────────────────────────────
 app.post('/api/findings', async (req, res) => {
   const { clientDomain, clientData, competitorResults } = req.body;
-  const prompt = `You are an SEO and web performance expert writing a client audit report. Based on the PageSpeed data below, write exactly 3 key findings. Each should have a punchy title (max 10 words) and a 1–2 sentence plain-English explanation. Focus on the most impactful issues and any notable competitive gaps.
+  const prompt = `You are an SEO and web performance expert writing a client audit report. Based on the PageSpeed data below, write exactly 3 key findings. Each should have a punchy title (max 10 words) and a 1–2 sentence plain-English explanation.
 Client: ${clientDomain}
 Client scores: ${JSON.stringify(clientData?.scores)}
 Client CWV: ${JSON.stringify(Object.entries(clientData?.cwv || {}).map(([k,v]) => ({ metric: v.label, value: v.value, score: v.score })))}
 Competitors: ${JSON.stringify(competitorResults?.map(c => ({ domain: c.url, scores: c.scores })))}
 Return ONLY a valid JSON array — no markdown, no preamble:
-[{"title":"...","body":"...","type":"issue"},{"title":"...","body":"...","type":"gap"},{"title":"...","body":"...","type":"issue"}]
-type must be either "issue" or "gap".`;
+[{"title":"...","body":"...","type":"issue"},{"title":"...","body":"...","type":"gap"},{"title":"...","body":"...","type":"issue"}]`;
   try {
     const response = await axios.post('https://api.anthropic.com/v1/messages', {
       model: 'claude-sonnet-4-6', max_tokens: 600,
       messages: [{ role: 'user', content: prompt }]
     }, { headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' } });
-    const text = response.data.content[0].text;
-    res.json(JSON.parse(text.replace(/```json|```/g,'').trim()));
+    res.json(JSON.parse(response.data.content[0].text.replace(/```json|```/g,'').trim()));
   } catch (err) {
     console.error('Anthropic error:', err.response?.data || err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── Trends autocomplete — unofficial, fails silently ─────────────────────────
+// ── Trends autocomplete ───────────────────────────────────────────────────────
 app.get('/api/trends/autocomplete', async (req, res) => {
   const { keyword } = req.query;
   if (!keyword) return res.json([]);
@@ -98,7 +103,7 @@ app.get('/api/trends/autocomplete', async (req, res) => {
   }
 });
 
-// ── Google Trends — DataForSEO ────────────────────────────────────────────────
+// ── Google Trends ─────────────────────────────────────────────────────────────
 app.post('/api/trends', async (req, res) => {
   const { keywords, dateFrom, dateTo, locationCode, geo } = req.body;
   if (!keywords?.length) return res.status(400).json({ error: 'keywords required' });
@@ -125,7 +130,7 @@ app.post('/api/trends', async (req, res) => {
   }
 });
 
-// ── Ranked keywords + SERP data ───────────────────────────────────────────────
+// ── Ranked keywords (fix 1+2: rank_group, ETV desc order) ────────────────────
 app.post('/api/ranked-keywords', async (req, res) => {
   const { domain, locationCode, languageCode } = req.body;
   if (!domain) return res.status(400).json({ error: 'domain required' });
@@ -135,7 +140,7 @@ app.post('/api/ranked-keywords', async (req, res) => {
       target: cd, location_code: locationCode||2710, language_code: languageCode||'en',
       load_rank_absolute: true,
       filters: [['keyword_data.keyword_info.search_volume','>',0],'and',[['ranked_serp_element.serp_item.type','<>','paid'],'or',['ranked_serp_element.serp_item.is_paid','=',false]]],
-      order_by: ['ranked_serp_element.serp_item.rank_absolute,asc'],
+      order_by: ['ranked_serp_element.serp_item.etv,desc'],
       limit: 10
     }];
     const response = await axios.post('https://api.dataforseo.com/v3/dataforseo_labs/google/ranked_keywords/live', payload, { headers: dfsHeaders });
@@ -143,7 +148,7 @@ app.post('/api/ranked-keywords', async (req, res) => {
     const items = response.data.tasks?.[0]?.result?.[0]?.items || [];
     const keywords = items.map(item => ({
       keyword: item.keyword_data?.keyword,
-      rank:    item.ranked_serp_element?.serp_item?.rank_absolute,
+      rank:    item.ranked_serp_element?.serp_item?.rank_group || item.ranked_serp_element?.serp_item?.rank_absolute,
       volume:  item.keyword_data?.keyword_info?.search_volume,
       cpc:     item.keyword_data?.keyword_info?.cpc,
       etv:     item.ranked_serp_element?.serp_item?.etv
@@ -155,7 +160,7 @@ app.post('/api/ranked-keywords', async (req, res) => {
   }
 });
 
-// ── SERP data per keyword (AI Overview + Featured Snippet + Local Pack + PAA + Top 3) ──
+// ── SERP data per keyword ─────────────────────────────────────────────────────
 app.post('/api/serp-data', async (req, res) => {
   const { keywords, domain, locationCode, languageCode } = req.body;
   if (!keywords?.length) return res.status(400).json({ error: 'keywords required' });
@@ -168,8 +173,8 @@ app.post('/api/serp-data', async (req, res) => {
         const items = response.data.tasks?.[0]?.result?.[0]?.items || [];
 
         // AI Overview
-        const aioItem  = items.find(i => i.type === 'ai_overview');
-        const hasAIO   = !!aioItem;
+        const aioItem   = items.find(i => i.type === 'ai_overview');
+        const hasAIO    = !!aioItem;
         const citations = hasAIO ? (aioItem.references || aioItem.items || []).map(r => r.url || r.source?.url || r.domain).filter(Boolean).slice(0,5) : [];
 
         // Featured snippet
@@ -181,12 +186,24 @@ app.post('/api/serp-data', async (req, res) => {
         const localPack     = localPackItem ? (localPackItem.items || []).slice(0,3).map(b => ({ title: b.title, domain: b.domain })) : null;
         const clientInPack  = localPack ? localPack.some(b => b.domain?.includes(rootDomain)) : false;
 
-        // People Also Ask
+        // PAA
         const paaItem = items.find(i => i.type === 'people_also_ask');
         const paa     = paaItem ? (paaItem.items || []).slice(0,4).map(q => q.title || q.question).filter(Boolean) : [];
 
-        // Top 3 organic
-        const organic = items.filter(i => i.type === 'organic').sort((a,b) => (a.rank_absolute||99) - (b.rank_absolute||99)).slice(0,3).map(i => ({ url: i.url || i.domain, rank: i.rank_absolute }));
+        // Top 3 organic — use rank_group, clean URL keeping path but stripping params
+        const organic = items
+          .filter(i => i.type === 'organic')
+          .sort((a,b) => (a.rank_group||99) - (b.rank_group||99))
+          .slice(0,3)
+          .map(i => {
+            const raw = i.url || i.domain || '';
+            let display = raw;
+            try {
+              const u = new URL(raw);
+              display = u.hostname.replace(/^www\./, '') + (u.pathname !== '/' ? u.pathname : '');
+            } catch {}
+            return { url: raw, display, rank: i.rank_group || i.rank_absolute };
+          });
 
         return { keyword: kw, hasAIO, citations, featuredSnippet, localPack, clientInPack, paa, top3: organic };
       } catch {
@@ -223,53 +240,81 @@ Rules:
   }
 });
 
-// ── LLM Mentions ──────────────────────────────────────────────────────────────
-app.post('/api/llm-mentions', async (req, res) => {
-  const { domain, brandName, locationCode, languageCode } = req.body;
-  if (!domain) return res.status(400).json({ error: 'domain required' });
+// ── ChatGPT AI visibility ─────────────────────────────────────────────────────
+app.post('/api/chatgpt-visibility', async (req, res) => {
+  const { keywords, brandName, domain } = req.body;
+  if (!keywords?.length) return res.status(400).json({ error: 'keywords required' });
+  const rootDomain = cleanDomain(domain || '');
   try {
-    const cd = cleanDomain(domain);
-    const platforms = ['google_ai_overview', 'chat_gpt', 'perplexity'];
-    const results = await Promise.all(platforms.map(async platform => {
+    const results = await Promise.all(keywords.map(async kw => {
       try {
-        const payload = [{ target: cd, target_type: 'domain', platform_type: platform, location_code: locationCode||2710, language_code: languageCode||'en', limit: 10 }];
-        const response = await axios.post('https://api.dataforseo.com/v3/content_analysis/search/live', payload, { headers: dfsHeaders });
-        const items = response.data.tasks?.[0]?.result?.[0]?.items || [];
-        const total = response.data.tasks?.[0]?.result?.[0]?.total_count || 0;
-        const citations = items.map(item => ({ question: item.title||'', url: item.url||item.page_url||'', context: item.snippet||'', date: item.fetch_time||'' })).filter(c => c.url);
-        return { platform, mentions: total, citations };
-      } catch { return { platform, mentions: 0, citations: [] }; }
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+          model: 'gpt-4o-mini',
+          max_tokens: 300,
+          messages: [{ role: 'user', content: kw }]
+        }, { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' } });
+
+        const answer   = response.data.choices?.[0]?.message?.content || '';
+        const mentioned = answer.toLowerCase().includes(brandName.toLowerCase());
+        const cited     = answer.toLowerCase().includes(rootDomain.toLowerCase());
+
+        // Extract snippet where brand is mentioned
+        let snippet = '';
+        if (mentioned) {
+          const idx = answer.toLowerCase().indexOf(brandName.toLowerCase());
+          snippet = answer.substring(Math.max(0, idx - 50), Math.min(answer.length, idx + 150)).trim();
+        }
+
+        return { keyword: kw, mentioned, cited, snippet, answer: answer.slice(0, 500) };
+      } catch (e) {
+        return { keyword: kw, mentioned: false, cited: false, snippet: '', error: e.message };
+      }
     }));
     res.json({ results });
   } catch (err) {
-    console.error('LLM mentions error:', err.response?.data || err.message);
-    res.status(500).json({ error: err.response?.data?.error?.message || err.message });
+    console.error('ChatGPT visibility error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ── Traffic analytics ─────────────────────────────────────────────────────────
+// ── Traffic analytics (fix 3) ─────────────────────────────────────────────────
 app.post('/api/traffic', async (req, res) => {
   const { domain, locationCode, languageCode } = req.body;
   if (!domain) return res.status(400).json({ error: 'domain required' });
   try {
     const cd = cleanDomain(domain);
-    // Site-level traffic overview
-    const overviewPayload = [{ target: cd, location_code: locationCode||2710, language_code: languageCode||'en' }];
-    const overviewRes = await axios.post('https://api.dataforseo.com/v3/dataforseo_labs/google/domain_rank_overview/live', overviewPayload, { headers: dfsHeaders });
+
+    // Site-level overview
+    const overviewRes = await axios.post('https://api.dataforseo.com/v3/dataforseo_labs/google/domain_rank_overview/live',
+      [{ target: cd, location_code: locationCode||2710, language_code: languageCode||'en' }],
+      { headers: dfsHeaders });
     const overview = overviewRes.data.tasks?.[0]?.result?.[0]?.items?.[0] || {};
 
-    // Top pages by traffic
-    const pagesPayload = [{ target: cd, location_code: locationCode||2710, language_code: languageCode||'en', order_by: ['traffic_cost,desc'], limit: 15 }];
-    const pagesRes = await axios.post('https://api.dataforseo.com/v3/dataforseo_labs/google/pages_by_keywords/live', pagesPayload, { headers: dfsHeaders });
-    const pages = (pagesRes.data.tasks?.[0]?.result?.[0]?.items || []).map(p => ({
-      url:         p.page_address || p.url,
-      etv:         p.metrics?.organic?.etv || 0,
-      keywords:    p.metrics?.organic?.count || 0,
-      avgPosition: p.metrics?.organic?.pos_1 ? 1 : p.metrics?.organic?.pos_2_3 ? 2 : p.metrics?.organic?.pos_4_10 ? 7 : 10
-    }));
+    // Top pages via ranked keywords grouped by URL
+    const pagesRes = await axios.post('https://api.dataforseo.com/v3/dataforseo_labs/google/ranked_keywords/live', [{
+      target: cd, location_code: locationCode||2710, language_code: languageCode||'en',
+      load_rank_absolute: true,
+      filters: [['keyword_data.keyword_info.search_volume','>',0]],
+      order_by: ['ranked_serp_element.serp_item.etv,desc'],
+      limit: 50
+    }], { headers: dfsHeaders });
+
+    const kwItems = pagesRes.data.tasks?.[0]?.result?.[0]?.items || [];
+    const pageMap = {};
+    kwItems.forEach(item => {
+      const raw = item.ranked_serp_element?.serp_item?.url || cd;
+      const etv = item.ranked_serp_element?.serp_item?.etv || 0;
+      let display = raw;
+      try { const u = new URL(raw); display = u.hostname.replace(/^www\./, '') + (u.pathname !== '/' ? u.pathname : ''); } catch {}
+      if (!pageMap[raw]) pageMap[raw] = { url: raw, display, etv: 0, keywords: 0 };
+      pageMap[raw].etv      += etv;
+      pageMap[raw].keywords += 1;
+    });
+    const pages = Object.values(pageMap).sort((a,b) => b.etv - a.etv).slice(0,15)
+      .map(p => ({ url: p.url, display: p.display, etv: Math.round(p.etv), keywords: p.keywords }));
 
     res.json({
-      totalTraffic:     overview.metrics?.organic?.etv || 0,
+      totalTraffic:     overview.metrics?.organic?.etv   || 0,
       totalKeywords:    overview.metrics?.organic?.count || 0,
       referringDomains: overview.backlinks_info?.referring_domains || 0,
       pages
@@ -280,11 +325,10 @@ app.post('/api/traffic', async (req, res) => {
   }
 });
 
-// ── Social media links (DataForSEO OnPage) ────────────────────────────────────
+// ── Social — JS rendering (fix 6) ────────────────────────────────────────────
 app.post('/api/social', async (req, res) => {
   const { domains, locationCode } = req.body;
   if (!domains?.length) return res.status(400).json({ error: 'domains required' });
-
   const SOCIAL_PATTERNS = {
     facebook:  /facebook\.com\//i,
     instagram: /instagram\.com\//i,
@@ -294,26 +338,46 @@ app.post('/api/social', async (req, res) => {
     twitter:   /twitter\.com\/|x\.com\//i,
     pinterest: /pinterest\.com\//i
   };
-
   try {
     const results = await Promise.all(domains.map(async ({ name, domain }) => {
       try {
         const cd = cleanDomain(domain);
-        const payload = [{ target: `https://${cd}`, location_code: locationCode||2710, load_resources: false, enable_javascript: false }];
+        // Use JS rendering to catch dynamically loaded social links
+        const payload = [{
+          target:            `https://${cd}`,
+          location_code:     locationCode||2710,
+          load_resources:    false,
+          enable_javascript: true,
+          enable_browser_rendering: false
+        }];
         const response = await axios.post('https://api.dataforseo.com/v3/on_page/instant_pages', payload, { headers: dfsHeaders });
-        const links = response.data.tasks?.[0]?.result?.[0]?.items?.[0]?.resource_errors || [];
-        const pageLinks = response.data.tasks?.[0]?.result?.[0]?.items?.[0]?.items || [];
+        const pageData  = response.data.tasks?.[0]?.result?.[0]?.items?.[0];
+        const pageLinks = pageData?.items || [];
+        const extLinks  = pageData?.extended_crawl_summary?.links_external || [];
 
         const social = {};
-        [...links, ...pageLinks].forEach(item => {
-          const url = item.url || item.href || '';
+        [...pageLinks, ...extLinks].forEach(item => {
+          const url = item.url || item.href || item.link || '';
           Object.entries(SOCIAL_PATTERNS).forEach(([platform, pattern]) => {
             if (pattern.test(url) && !social[platform]) social[platform] = url;
           });
         });
 
+        // Also check meta tags for social links
+        const metaTags = pageData?.meta?.social || {};
+        Object.entries(metaTags).forEach(([key, val]) => {
+          if (typeof val === 'string') {
+            Object.entries(SOCIAL_PATTERNS).forEach(([platform, pattern]) => {
+              if (pattern.test(val) && !social[platform]) social[platform] = val;
+            });
+          }
+        });
+
         return { name, domain: cd, social };
-      } catch { return { name, domain: cleanDomain(domain), social: {} }; }
+      } catch (e) {
+        console.error('Social crawl error for', domain, e.message);
+        return { name, domain: cleanDomain(domain), social: {} };
+      }
     }));
     res.json({ results });
   } catch (err) {

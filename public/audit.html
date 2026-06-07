@@ -116,9 +116,12 @@
     .cited-link{font-size:10px;color:var(--pink);text-decoration:none;}
     .cited-link:hover{text-decoration:underline;}
     .cited-link.own{color:var(--psi-pass-text);}
-    .top3-wrap{display:flex;flex-wrap:wrap;gap:4px;}
-    .top3-url{font-size:10px;color:var(--text-secondary);}
-    .top3-url.own{color:var(--psi-pass-text);font-weight:500;}
+    .top3-wrap{display:flex;flex-wrap:wrap;gap:6px;}
+    .url-pill{display:inline-block;font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid;text-decoration:none;white-space:nowrap;cursor:pointer;}
+    .url-pill-own{border-color:#9FE1CB;color:var(--psi-pass-text);background:#F0FBF5;}
+    .url-pill-own:hover{background:#d8f5ec;}
+    .url-pill-other{border-color:var(--blush-border);color:var(--pink);background:var(--blush);}
+    .url-pill-other:hover{background:var(--blush-mid);}
     /* Intent tables */
     .intent-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
     .intent-card{border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;}
@@ -514,6 +517,13 @@ async function loadAISearch() {
       return {...k,...serp};
     });
 
+    // Step 3 — auto classify intent in background
+    const intentRes = await fetch('/api/classify-intent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keywords:kwStrings})});
+    const intentJson = await intentRes.json();
+    const intentMap = {};
+    (Array.isArray(intentJson)?intentJson:[]).forEach(r=>intentMap[r.keyword]=r.intent);
+    kwData.forEach(k => k.intent = intentMap[k.keyword] || 'informational');
+
     kwEl.innerHTML   = buildKwRankings(kwData);
     serpEl.innerHTML = buildSerpFeatures(kwData);
     aiEl.innerHTML   = buildAIVisibility(kwData);
@@ -524,22 +534,43 @@ async function loadAISearch() {
   }
 }
 
+function urlPill(url, display, isOwn) {
+  const cls = isOwn ? 'url-pill url-pill-own' : 'url-pill url-pill-other';
+  const href = url.startsWith('http') ? url : 'https://' + url;
+  const label = display || url;
+  const tip = url;
+  return `<a href="${href}" target="_blank" class="${cls}" title="${tip}">${label}</a>`;
+}
+
 function buildKwRankings(data) {
   const rows = data.map(k => {
-    const cpc  = k.cpc  ? `$${parseFloat(k.cpc).toFixed(2)}`  : '—';
-    const vol  = k.volume ? k.volume.toLocaleString() : '—';
-    const etv  = k.etv   ? Math.round(k.etv).toLocaleString() : '—';
-    const top3 = (k.top3||[]).map(t=>{
-      const own = isOwnDomain(t.url,rootDomain);
-      return `<span class="top3-url ${own?'own':''}">#${t.rank} ${t.url}</span>`;
-    }).join('<span style="color:#ccc;margin:0 3px;">·</span>') || '—';
+    const cpc  = k.cpc    ? `$${parseFloat(k.cpc).toFixed(2)}` : '—';
+    const vol  = k.volume ? k.volume.toLocaleString()           : '—';
+    const etv  = k.etv    ? Math.round(k.etv).toLocaleString()  : '—';
+    const top3 = (k.top3||[]).map(t => {
+      const own = isOwnDomain(t.url, rootDomain);
+      return urlPill(t.url, t.display || t.url, own);
+    }).join('') || '<span style="color:#ccc;font-size:10px;">—</span>';
     return `<tr><td style="font-weight:500;">${k.keyword}</td><td>#${k.rank}</td><td>${vol}</td><td>${cpc}</td><td>${etv}</td><td><div class="top3-wrap">${top3}</div></td></tr>`;
   }).join('');
+
+  // Intent groups from auto-classified data
+  const groups = {transactional:[],informational:[],navigational:[]};
+  data.forEach(k => { if(groups[k.intent]) groups[k.intent].push(k); });
+  const intentLabels = {transactional:'Transactional',informational:'Informational',navigational:'Navigational'};
+  const intentTables = Object.entries(groups).filter(([,kws])=>kws.length).map(([intent,kws])=>`
+    <div class="intent-card intent-${intent}">
+      <div class="intent-card-header">${intentLabels[intent]} (${kws.length})</div>
+      <table class="intent-table">
+        <thead><tr><th>Keyword</th><th style="width:60px;">Rank</th><th style="width:70px;">Volume</th><th style="width:80px;">Est. Visits</th></tr></thead>
+        <tbody>${kws.map(k=>`<tr><td style="font-weight:500;">${k.keyword}</td><td>#${k.rank}</td><td>${k.volume?k.volume.toLocaleString():'—'}</td><td>${k.etv?Math.round(k.etv).toLocaleString():'—'}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>`).join('');
 
   return `
     <div class="eyebrow">Organic search</div>
     <div class="section-title">Keywords & Rankings</div>
-    <div class="section-sub">Top 10 keywords ${clientDomain} ranks for · ordered by rank</div>
+    <div class="section-sub">Top 10 keywords ${clientDomain} ranks for · ordered by traffic value</div>
     <div class="as-table-wrap">
       <table class="as-table">
         <thead><tr><th style="width:28%;">Keyword</th><th style="width:8%;">Rank</th><th style="width:10%;">Volume</th><th style="width:8%;">CPC</th><th style="width:12%;">Est. Visits</th><th>Top 3</th></tr></thead>
@@ -547,12 +578,8 @@ function buildKwRankings(data) {
       </table>
     </div>
     <div class="divider"></div>
-    <div class="eyebrow" style="margin-bottom:10px;">Keyword intent</div>
-    <div class="ai-prompt-card" id="intent-prompt">
-      <div class="ai-prompt-text"><strong>View keywords by intent?</strong>Claude will classify each keyword as transactional, informational, or navigational.</div>
-      <button class="ai-btn" onclick="triggerIntent()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>Classify intent</button>
-    </div>
-    <div id="intent-results" style="display:none;"></div>`;
+    <div class="eyebrow" style="margin-bottom:12px;">Keyword intent</div>
+    <div class="intent-grid">${intentTables}</div>`;
 }
 
 function buildSerpFeatures(data) {
@@ -594,109 +621,134 @@ function buildSerpFeatures(data) {
 }
 
 function buildAIVisibility(data) {
+  // Google AIO stats from existing SERP data
+  const aioTotal    = data.filter(k=>k.hasAIO).length;
+  const aioCited    = data.filter(k=>k.hasAIO && k.citations?.some(c=>isOwnDomain(c,rootDomain))).length;
+  const aioNotCited = data.filter(k=>k.hasAIO && !k.citations?.some(c=>isOwnDomain(c,rootDomain))).length;
+
   const rows = data.map(k=>{
-    const aioStr   = k.hasAIO ? '<span style="color:var(--psi-pass-text);">Yes</span>' : '<span style="color:#aaa;">No</span>';
-    let citHtml = '—';
+    const aioStr = k.hasAIO ? '<span style="color:var(--psi-pass-text);">Yes</span>' : '<span style="color:#aaa;">No</span>';
+    let citHtml = '<span style="color:#ccc;font-size:10px;">No AI Overview</span>';
     if(k.hasAIO && k.citations?.length) {
-      citHtml = k.citations.map(c=>{
+      citHtml = `<div class="top3-wrap">${k.citations.map(c=>{
         const own = isOwnDomain(c,rootDomain);
-        return `<a href="${c.startsWith('http')?c:'https://'+c}" target="_blank" class="cited-link ${own?'own':''}">${c}</a>`;
-      }).join('<span style="color:#ccc;margin:0 4px;">·</span>');
-    } else if(!k.hasAIO) {
-      citHtml = '<span style="color:#ccc;font-size:10px;">No AI Overview</span>';
+        const display = c.replace(/^https?:\/\/(www\.)?/,'').split('?')[0].replace(/\/$/,'');
+        return urlPill(c, display, own);
+      }).join('')}</div>`;
+    } else if(k.hasAIO) {
+      citHtml = '<span style="color:#ccc;font-size:10px;">No citations found</span>';
     }
     return `<tr><td style="font-weight:500;">${k.keyword}</td><td>#${k.rank}</td><td>${aioStr}</td><td>${citHtml}</td></tr>`;
   }).join('');
 
+  // Build ChatGPT keyword selector — auto-tick best transactional, informational, brand
+  const transactional = data.filter(k=>k.intent==='transactional').sort((a,b)=>(b.volume||0)-(a.volume||0));
+  const informational = data.filter(k=>k.intent==='informational').sort((a,b)=>(b.volume||0)-(a.volume||0));
+  const navigational  = data.filter(k=>k.intent==='navigational').sort((a,b)=>(b.volume||0)-(a.volume||0));
+  const autoTick = new Set([
+    transactional[0]?.keyword,
+    informational[0]?.keyword,
+    navigational[0]?.keyword
+  ].filter(Boolean));
+
+  const kwCheckRows = data.map(k=>`
+    <tr>
+      <td><input type="checkbox" class="kw-check" value="${k.keyword}" ${autoTick.has(k.keyword)?'checked':''}></td>
+      <td style="font-weight:500;">${k.keyword}</td>
+      <td>#${k.rank}</td>
+      <td><span style="font-size:10px;padding:2px 7px;border-radius:10px;background:${k.intent==='transactional'?'#F0FBF5':k.intent==='navigational'?'#FFF8ED':'#E6F1FB'};color:${k.intent==='transactional'?'#047A3F':k.intent==='navigational'?'#8A5600':'#185FA5'};">${k.intent||'—'}</span></td>
+    </tr>`).join('');
+
   return `
     <div class="eyebrow">AI visibility</div>
-    <div class="section-title">AI Overview citations</div>
+    <div class="section-title">Google AI Overview citations</div>
     <div class="section-sub">Whether Google's AI Overview cites ${clientDomain} for its ranked keywords</div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px;">
+      <div class="platform-card"><div class="platform-name">Google AI Overviews</div>
+        <div class="platform-stats">
+          <div><div class="platform-stat-val">${aioTotal}</div><div class="platform-stat-label">Keywords with AIO</div></div>
+          <div><div class="platform-stat-val">${aioCited}</div><div class="platform-stat-label">Client cited</div></div>
+        </div>
+      </div>
+      <div class="platform-card" style="grid-column:span 2;display:flex;align-items:center;gap:12px;">
+        <div style="font-size:12px;color:var(--text-muted);">
+          <strong style="color:var(--wine-dark);display:block;margin-bottom:2px;">Cited in ${aioCited} of ${aioTotal} AI Overviews</strong>
+          ${aioNotCited > 0 ? `${aioNotCited} keyword${aioNotCited>1?'s':''} have AI Overviews but cite competitors instead` : 'Client cited in all AI Overviews that appear'}
+        </div>
+      </div>
+    </div>
+
     <div class="as-table-wrap" style="margin-bottom:22px;">
       <table class="as-table">
         <thead><tr><th style="width:28%;">Keyword</th><th style="width:8%;">Rank</th><th style="width:12%;">AI Overview</th><th>Citations</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
+
     <div class="divider"></div>
-    <div class="eyebrow" style="margin-bottom:10px;">AI mentions</div>
-    <div class="section-sub" style="margin-bottom:16px;">${clientDomain} appearances in AI-generated responses · DataForSEO LLM Mentions</div>
-    <div class="ai-prompt-card" id="llm-prompt">
-      <div class="ai-prompt-text"><strong>Load AI mentions?</strong>Pulls ChatGPT, Perplexity &amp; Google AI Overview citation data from DataForSEO.</div>
-      <button class="ai-btn" onclick="loadAIMentions()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>Load mentions</button>
+
+    <div class="eyebrow" style="margin-bottom:6px;">ChatGPT visibility</div>
+    <div class="section-sub" style="margin-bottom:16px;">Select keywords to check whether ChatGPT mentions ${clientName} in its response</div>
+    <div class="as-table-wrap" style="margin-bottom:14px;">
+      <table class="as-table">
+        <thead><tr><th style="width:40px;"></th><th style="width:40%;">Keyword</th><th style="width:10%;">Rank</th><th>Intent</th></tr></thead>
+        <tbody>${kwCheckRows}</tbody>
+      </table>
     </div>
-    <div id="llm-results"></div>`;
+    <div style="display:flex;justify-content:flex-end;margin-bottom:20px;">
+      <button class="ai-btn" id="chatgptBtn" onclick="runChatGPTCheck()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        Check AI visibility
+      </button>
+    </div>
+    <div id="chatgpt-results"></div>`;
 }
 
-async function loadAIMentions() {
-  const btn     = document.querySelector('#llm-prompt .ai-btn');
-  const results = document.getElementById('llm-results');
-  btn.disabled=true; btn.innerHTML='<div class="spinner-sm"></div> Loading…';
+async function runChatGPTCheck() {
+  const btn     = document.getElementById('chatgptBtn');
+  const results = document.getElementById('chatgpt-results');
+  const checked = [...document.querySelectorAll('.kw-check:checked')].map(cb => cb.value);
+  if (!checked.length) { alert('Please select at least one keyword.'); return; }
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner-sm"></div> Checking…';
   try {
-    const res  = await fetch('/api/llm-mentions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:clientDomain,brandName:clientName,locationCode,languageCode})});
+    const res  = await fetch('/api/chatgpt-visibility', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ keywords: checked, brandName: clientName, domain: clientDomain })
+    });
     const data = await res.json();
-    if(data.error) throw new Error(data.error);
-    window._mentionsData = data.results||[];
-    const platformMeta = {google_ai_overview:{label:'Google AI Overviews'},chat_gpt:{label:'ChatGPT'},perplexity:{label:'Perplexity'}};
-    const cards = (data.results||[]).map(r=>{
-      const meta = platformMeta[r.platform]||{label:r.platform};
-      return `<div class="platform-card"><div class="platform-name">${meta.label}</div><div class="platform-stats"><div><div class="platform-stat-val">${r.mentions}</div><div class="platform-stat-label">Mentions</div></div><div><div class="platform-stat-val">${r.citations?.length||0}</div><div class="platform-stat-label">Citations</div></div></div><button class="view-btn" onclick="showCitations('${r.platform}')">View citations</button></div>`;
+    if (data.error) throw new Error(data.error);
+    const rows = (data.results||[]).map(r => {
+      const mentionedHtml = r.mentioned
+        ? '<span style="color:var(--psi-pass-text);">Yes</span>'
+        : '<span style="color:#aaa;">No</span>';
+      const snippetHtml = r.snippet
+        ? `<div style="font-size:10px;color:var(--text-muted);font-style:italic;margin-top:4px;line-height:1.5;">"…${r.snippet}…"</div>`
+        : r.mentioned ? '' : `<div style="font-size:10px;color:#ccc;margin-top:4px;">${r.answer?.slice(0,200)||'No response'}…</div>`;
+      return `<tr>
+        <td style="font-weight:500;">${r.keyword}</td>
+        <td>${mentionedHtml}</td>
+        <td>${snippetHtml}</td>
+      </tr>`;
     }).join('');
-    document.getElementById('llm-prompt').style.display='none';
-    results.innerHTML = `<div class="platform-cards">${cards}</div><div id="citations-panel-wrap"></div>`;
+    results.innerHTML = `
+      <div class="as-table-wrap">
+        <table class="as-table">
+          <thead><tr><th style="width:28%;">Keyword</th><th style="width:15%;">Brand mentioned?</th><th>What ChatGPT said</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Check again`;
   } catch(e) {
-    btn.disabled=false; btn.innerHTML='Load mentions';
+    btn.disabled = false;
+    btn.innerHTML = 'Check AI visibility';
     results.innerHTML = `<div class="error-box">${e.message}</div>`;
   }
 }
 
-let activeCitationPlatform = null;
-function showCitations(platform) {
-  const wrap = document.getElementById('citations-panel-wrap');
-  if(!wrap) return;
-  if(activeCitationPlatform===platform) { wrap.innerHTML=''; activeCitationPlatform=null; return; }
-  activeCitationPlatform=platform;
-  const platformMeta={google_ai_overview:{label:'Google AI Overviews'},chat_gpt:{label:'ChatGPT'},perplexity:{label:'Perplexity'}};
-  const data = (window._mentionsData||[]).find(r=>r.platform===platform);
-  const meta = platformMeta[platform]||{label:platform};
-  if(!data?.citations?.length) {
-    wrap.innerHTML=`<div class="citations-panel"><div class="citations-panel-hdr">${meta.label} citations</div><div style="padding:16px;font-size:11px;color:#aaa;text-align:center;">No citations found</div></div>`;
-    return;
-  }
-  const items = data.citations.map(c=>`<div class="citation-item"><div class="citation-q">${c.question||'—'}</div><a href="${c.url}" target="_blank" class="citation-url cited-link">${c.url}</a>${c.context?`<div class="citation-ctx">"${c.context}"</div>`:''}<div class="citation-date">${c.date}</div></div>`).join('');
-  wrap.innerHTML=`<div class="citations-panel"><div class="citations-panel-hdr">${meta.label} citations</div>${items}</div>`;
-}
-
-// ── Intent classification ─────────────────────────────────────────────────────
-async function triggerIntent() {
-  const btn     = document.querySelector('#intent-prompt .ai-btn');
-  const results = document.getElementById('intent-results');
-  btn.disabled=true; btn.innerHTML='<div class="spinner-sm"></div> Classifying…';
-  try {
-    const kwStrings = kwData.map(k=>k.keyword);
-    const res = await fetch('/api/classify-intent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keywords:kwStrings})});
-    const intentJson = await res.json();
-    const intentMap={};
-    (Array.isArray(intentJson)?intentJson:[]).forEach(r=>intentMap[r.keyword]=r.intent);
-    kwData.forEach(k=>k.intent=intentMap[k.keyword]||'informational');
-    const groups={transactional:[],informational:[],navigational:[]};
-    kwData.forEach(k=>{if(groups[k.intent])groups[k.intent].push(k);});
-    const intentLabels={transactional:'Transactional',informational:'Informational',navigational:'Navigational'};
-    const tables = Object.entries(groups).filter(([,kws])=>kws.length).map(([intent,kws])=>`
-      <div class="intent-card intent-${intent}">
-        <div class="intent-card-header">${intentLabels[intent]} (${kws.length})</div>
-        <table class="intent-table">
-          <thead><tr><th>Keyword</th><th style="width:60px;">Rank</th><th style="width:70px;">Volume</th><th style="width:80px;">Est. Visits</th></tr></thead>
-          <tbody>${kws.map(k=>`<tr><td style="font-weight:500;">${k.keyword}</td><td>#${k.rank}</td><td>${k.volume?k.volume.toLocaleString():'—'}</td><td>${k.etv?Math.round(k.etv).toLocaleString():'—'}</td></tr>`).join('')}</tbody>
-        </table>
-      </div>`).join('');
-    document.getElementById('intent-prompt').style.display='none';
-    results.innerHTML=`<div class="intent-grid">${tables}</div>`;
-    results.style.display='block';
-  } catch(e) {
-    btn.disabled=false; btn.innerHTML='Classify intent';
-  }
-}
+// Intent classification is now automatic in loadAISearch
 
 // ── Traffic ───────────────────────────────────────────────────────────────────
 window.trafficLoaded = false;
@@ -712,7 +764,8 @@ async function loadTraffic() {
     const refDomains   = data.referringDomains ? data.referringDomains.toLocaleString() : '—';
     const pageRows = (data.pages||[]).map((p,i)=>{
       const pct = data.totalTraffic ? Math.round((p.etv/data.totalTraffic)*100) : 0;
-      return `<tr><td><a href="https://${p.url||clientDomain}" target="_blank" class="cited-link">${p.url||clientDomain}</a></td><td>${p.etv?Math.round(p.etv).toLocaleString():'—'}</td><td>${p.keywords||'—'}</td><td>${pct?pct+'%':'—'}</td></tr>`;
+      const href = p.url?.startsWith('http') ? p.url : 'https://' + (p.url||clientDomain);
+      return `<tr><td><a href="${href}" target="_blank" class="cited-link">${p.display||p.url||clientDomain}</a></td><td>${p.etv?Math.round(p.etv).toLocaleString():'—'}</td><td>${p.keywords||'—'}</td><td>${pct?pct+'%':'—'}</td></tr>`;
     }).join('');
     el.innerHTML = `
       <div class="eyebrow">Traffic overview</div>
