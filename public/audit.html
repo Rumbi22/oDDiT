@@ -491,6 +491,7 @@ async function runAudit(strategy) {
 window.aiSearchLoaded = false;
 let kwData = [];
 let serpData = [];
+let totalKwCount = 0;
 
 async function loadAISearch() {
   window.aiSearchLoaded = true;
@@ -504,7 +505,7 @@ async function loadAISearch() {
     const kwJson = await kwRes.json();
     if(kwJson.error) throw new Error(kwJson.error);
     kwData = kwJson.keywords || [];
-    const totalKwCount = kwJson.totalCount || kwData.length;
+    totalKwCount = kwJson.totalCount || kwData.length;
     const kwStrings = kwData.map(k=>k.keyword);
 
     // Step 2 — SERP data for all keywords

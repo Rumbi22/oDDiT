@@ -358,30 +358,42 @@ app.post('/api/social', async (req, res) => {
     const results = await Promise.all(domains.map(async ({ name, domain }) => {
       try {
         const cd = cleanDomain(domain);
-        // Use JS rendering to catch dynamically loaded social links
         const payload = [{
           target:            `https://${cd}`,
           location_code:     locationCode||2710,
-          load_resources:    false,
+          load_resources:    true,
           enable_javascript: true,
           enable_browser_rendering: false
         }];
         const response = await axios.post('https://api.dataforseo.com/v3/on_page/instant_pages', payload, { headers: dfsHeaders });
         const pageData  = response.data.tasks?.[0]?.result?.[0]?.items?.[0];
-        const pageLinks = pageData?.items || [];
-        const extLinks  = pageData?.extended_crawl_summary?.links_external || [];
+
+        // Log all available data keys for debugging
+        console.log('Social page keys for', cd, ':', Object.keys(pageData || {}));
+
+        // Check all possible link sources
+        const allLinks = [
+          ...(pageData?.items || []),
+          ...(pageData?.links || []),
+          ...(pageData?.resource_errors || []),
+        ];
+
+        // Also check page HTML content for social URLs
+        const rawHtml = pageData?.content || pageData?.meta?.description || '';
 
         const social = {};
-        [...pageLinks, ...extLinks].forEach(item => {
-          const url = item.url || item.href || item.link || '';
+
+        // Check structured links
+        allLinks.forEach(item => {
+          const url = item.url || item.href || item.link || item.source || '';
           Object.entries(SOCIAL_PATTERNS).forEach(([platform, pattern]) => {
             if (pattern.test(url) && !social[platform]) social[platform] = url;
           });
         });
 
-        // Also check meta tags for social links
-        const metaTags = pageData?.meta?.social || {};
-        Object.entries(metaTags).forEach(([key, val]) => {
+        // Check meta tags
+        const meta = pageData?.meta || {};
+        Object.values(meta).forEach(val => {
           if (typeof val === 'string') {
             Object.entries(SOCIAL_PATTERNS).forEach(([platform, pattern]) => {
               if (pattern.test(val) && !social[platform]) social[platform] = val;
@@ -389,6 +401,16 @@ app.post('/api/social', async (req, res) => {
           }
         });
 
+        // Check extra_tags which often contain social links
+        const extraTags = pageData?.extra_tags || [];
+        extraTags.forEach(tag => {
+          const val = tag.content || tag.href || tag.value || '';
+          Object.entries(SOCIAL_PATTERNS).forEach(([platform, pattern]) => {
+            if (pattern.test(val) && !social[platform]) social[platform] = val;
+          });
+        });
+
+        console.log('Social found for', cd, ':', JSON.stringify(social));
         return { name, domain: cd, social };
       } catch (e) {
         console.error('Social crawl error for', domain, e.message);
