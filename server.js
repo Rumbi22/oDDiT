@@ -136,30 +136,44 @@ app.post('/api/ranked-keywords', async (req, res) => {
   if (!domain) return res.status(400).json({ error: 'domain required' });
   try {
     const cd = cleanDomain(domain);
+    // No filters — get everything including featured snippets, local pack etc.
+    // No search volume filter — include zero volume keywords too
+    // include_subdomains — catches blog.domain.com, shop.domain.com etc.
     const payload = [{
-      target: cd, location_code: locationCode||2710, language_code: languageCode||'en',
+      target:             cd,
+      location_code:      locationCode||2710,
+      language_code:      languageCode||'en',
       load_rank_absolute: true,
-      filters: [
-        ['keyword_data.keyword_info.search_volume', '>', 0],
-        'and',
-        ['ranked_serp_element.serp_item.type', '=', 'organic']
-      ],
-      order_by: ['ranked_serp_element.serp_item.etv,desc'],
-      limit: 100
+      include_subdomains: true,
+      order_by:           ['ranked_serp_element.serp_item.etv,desc'],
+      limit:              1000
     }];
     const response = await axios.post('https://api.dataforseo.com/v3/dataforseo_labs/google/ranked_keywords/live', payload, { headers: dfsHeaders });
-    console.log('Ranked KW status:', response.data.tasks?.[0]?.status_message);
-    const items = response.data.tasks?.[0]?.result?.[0]?.items || [];
-    const totalCount = response.data.tasks?.[0]?.result?.[0]?.total_count || 0;
+    const result     = response.data.tasks?.[0]?.result?.[0];
+    const totalCount = result?.total_count || 0;
+    const itemsCount = result?.items_count || 0;
+    const items      = result?.items || [];
+
+    console.log(`Ranked KW — total_count: ${totalCount}, items_count: ${itemsCount}, returned: ${items.length}`);
+
+    // Log item types found so we can see what's in the index
+    const typeCounts = {};
+    items.forEach(item => {
+      const t = item.ranked_serp_element?.serp_item?.type || 'unknown';
+      typeCounts[t] = (typeCounts[t] || 0) + 1;
+    });
+    console.log('Item types:', JSON.stringify(typeCounts));
+
     const keywords = items.map(item => ({
-      keyword: item.keyword_data?.keyword,
-      rank:    item.ranked_serp_element?.serp_item?.rank_group || item.ranked_serp_element?.serp_item?.rank_absolute,
-      volume:  item.keyword_data?.keyword_info?.search_volume,
-      cpc:     item.keyword_data?.keyword_info?.cpc,
-      etv:     item.ranked_serp_element?.serp_item?.etv
+      keyword:  item.keyword_data?.keyword,
+      rank:     item.ranked_serp_element?.serp_item?.rank_group || item.ranked_serp_element?.serp_item?.rank_absolute,
+      volume:   item.keyword_data?.keyword_info?.search_volume || 0,
+      cpc:      item.keyword_data?.keyword_info?.cpc,
+      etv:      item.ranked_serp_element?.serp_item?.etv || 0,
+      itemType: item.ranked_serp_element?.serp_item?.type
     })).filter(k => k.keyword);
-    console.log(`Ranked KW: ${keywords.length} returned, ${totalCount} total in index`);
-    res.json({ keywords, totalCount });
+
+    res.json({ keywords, totalCount, itemsCount });
   } catch (err) {
     console.error('Ranked keywords error:', err.response?.data || err.message);
     res.status(500).json({ error: err.response?.data?.error?.message || err.message });

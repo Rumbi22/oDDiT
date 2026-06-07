@@ -506,6 +506,8 @@ async function loadAISearch() {
     if(kwJson.error) throw new Error(kwJson.error);
     kwData = kwJson.keywords || [];
     totalKwCount = kwJson.totalCount || kwData.length;
+    const itemsCount = kwJson.itemsCount || kwData.length;
+    console.log(`Keywords: ${kwData.length} returned, ${totalKwCount} total_count, ${itemsCount} items_count`);
     const kwStrings = kwData.map(k=>k.keyword);
 
     // Step 2 — SERP data for all keywords
