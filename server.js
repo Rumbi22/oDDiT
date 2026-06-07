@@ -139,13 +139,18 @@ app.post('/api/ranked-keywords', async (req, res) => {
     const payload = [{
       target: cd, location_code: locationCode||2710, language_code: languageCode||'en',
       load_rank_absolute: true,
-      filters: [['keyword_data.keyword_info.search_volume','>',0],'and',[['ranked_serp_element.serp_item.type','<>','paid'],'or',['ranked_serp_element.serp_item.is_paid','=',false]]],
+      filters: [
+        ['keyword_data.keyword_info.search_volume', '>', 0],
+        'and',
+        ['ranked_serp_element.serp_item.type', '=', 'organic']
+      ],
       order_by: ['ranked_serp_element.serp_item.etv,desc'],
-      limit: 10
+      limit: 100
     }];
     const response = await axios.post('https://api.dataforseo.com/v3/dataforseo_labs/google/ranked_keywords/live', payload, { headers: dfsHeaders });
     console.log('Ranked KW status:', response.data.tasks?.[0]?.status_message);
     const items = response.data.tasks?.[0]?.result?.[0]?.items || [];
+    const totalCount = response.data.tasks?.[0]?.result?.[0]?.total_count || 0;
     const keywords = items.map(item => ({
       keyword: item.keyword_data?.keyword,
       rank:    item.ranked_serp_element?.serp_item?.rank_group || item.ranked_serp_element?.serp_item?.rank_absolute,
@@ -153,7 +158,8 @@ app.post('/api/ranked-keywords', async (req, res) => {
       cpc:     item.keyword_data?.keyword_info?.cpc,
       etv:     item.ranked_serp_element?.serp_item?.etv
     })).filter(k => k.keyword);
-    res.json({ keywords });
+    console.log(`Ranked KW: ${keywords.length} returned, ${totalCount} total in index`);
+    res.json({ keywords, totalCount });
   } catch (err) {
     console.error('Ranked keywords error:', err.response?.data || err.message);
     res.status(500).json({ error: err.response?.data?.error?.message || err.message });
@@ -314,9 +320,19 @@ app.post('/api/traffic', async (req, res) => {
       .map(p => ({ url: p.url, display: p.display, etv: Math.round(p.etv), keywords: p.keywords }));
 
     res.json({
-      totalTraffic:     overview.metrics?.organic?.etv   || 0,
-      totalKeywords:    overview.metrics?.organic?.count || 0,
+      organicTraffic:   overview.metrics?.organic?.etv   || 0,
+      paidTraffic:      overview.metrics?.paid?.etv      || 0,
+      totalTraffic:    (overview.metrics?.organic?.etv   || 0) + (overview.metrics?.paid?.etv || 0),
+      organicKeywords:  overview.metrics?.organic?.count || 0,
+      paidKeywords:     overview.metrics?.paid?.count    || 0,
       referringDomains: overview.backlinks_info?.referring_domains || 0,
+      backlinks:        overview.backlinks_info?.backlinks || 0,
+      posBreakdown: {
+        top3:    (overview.metrics?.organic?.pos_1||0) + (overview.metrics?.organic?.pos_2_3||0),
+        top10:    overview.metrics?.organic?.pos_4_10  || 0,
+        top30:   (overview.metrics?.organic?.pos_11_20||0) + (overview.metrics?.organic?.pos_21_30||0),
+        beyond:  (overview.metrics?.organic?.pos_31_40||0) + (overview.metrics?.organic?.pos_41_50||0)
+      },
       pages
     });
   } catch (err) {

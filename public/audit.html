@@ -504,6 +504,7 @@ async function loadAISearch() {
     const kwJson = await kwRes.json();
     if(kwJson.error) throw new Error(kwJson.error);
     kwData = kwJson.keywords || [];
+    const totalKwCount = kwJson.totalCount || kwData.length;
     const kwStrings = kwData.map(k=>k.keyword);
 
     // Step 2 — SERP data for all keywords
@@ -570,7 +571,7 @@ function buildKwRankings(data) {
   return `
     <div class="eyebrow">Organic search</div>
     <div class="section-title">Keywords & Rankings</div>
-    <div class="section-sub">Top 10 keywords ${clientDomain} ranks for · ordered by traffic value</div>
+    <div class="section-sub">Top ${kwData.length} keywords ${clientDomain} ranks for · ${totalKwCount} total in DataForSEO index · ordered by traffic value</div>
     <div class="as-table-wrap">
       <table class="as-table">
         <thead><tr><th style="width:28%;">Keyword</th><th style="width:8%;">Rank</th><th style="width:10%;">Volume</th><th style="width:8%;">CPC</th><th style="width:12%;">Est. Visits</th><th>Top 3</th></tr></thead>
@@ -759,9 +760,13 @@ async function loadTraffic() {
     const res  = await fetch('/api/traffic',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:clientDomain,locationCode,languageCode})});
     const data = await res.json();
     if(data.error) throw new Error(data.error);
-    const totalTraffic = data.totalTraffic ? Math.round(data.totalTraffic).toLocaleString() : '—';
-    const totalKw      = data.totalKeywords ? data.totalKeywords.toLocaleString() : '—';
-    const refDomains   = data.referringDomains ? data.referringDomains.toLocaleString() : '—';
+    const totalTraffic  = data.organicTraffic  ? Math.round(data.organicTraffic).toLocaleString()  : '—';
+    const paidTraffic   = data.paidTraffic    ? Math.round(data.paidTraffic).toLocaleString()    : '0';
+    const totalKw       = data.organicKeywords ? data.organicKeywords.toLocaleString()           : '—';
+    const paidKw        = data.paidKeywords   ? data.paidKeywords.toLocaleString()               : '0';
+    const refDomains    = data.referringDomains ? data.referringDomains.toLocaleString()         : '—';
+    const backlinks     = data.backlinks      ? data.backlinks.toLocaleString()                  : '—';
+    const pos = data.posBreakdown || {};
     const pageRows = (data.pages||[]).map((p,i)=>{
       const pct = data.totalTraffic ? Math.round((p.etv/data.totalTraffic)*100) : 0;
       const href = p.url?.startsWith('http') ? p.url : 'https://' + (p.url||clientDomain);
@@ -771,10 +776,16 @@ async function loadTraffic() {
       <div class="eyebrow">Traffic overview</div>
       <div class="section-title">Estimated traffic</div>
       <div class="section-sub">${clientDomain} · estimated organic search traffic · DataForSEO Labs</div>
-      <div class="traffic-summary">
-        <div class="traffic-card"><div class="traffic-card-label">Est. monthly visits</div><div class="traffic-card-val">${totalTraffic}</div></div>
-        <div class="traffic-card"><div class="traffic-card-label">Ranking keywords</div><div class="traffic-card-val">${totalKw}</div></div>
-        <div class="traffic-card"><div class="traffic-card-label">Referring domains</div><div class="traffic-card-val">${refDomains}</div></div>
+      <div class="traffic-summary" style="grid-template-columns:repeat(3,1fr);">
+        <div class="traffic-card"><div class="traffic-card-label">Est. organic visits</div><div class="traffic-card-val">${totalTraffic}</div></div>
+        <div class="traffic-card"><div class="traffic-card-label">Organic keywords</div><div class="traffic-card-val">${totalKw}</div></div>
+        <div class="traffic-card"><div class="traffic-card-label">Paid keywords</div><div class="traffic-card-val">${paidKw}</div></div>
+      </div>
+      <div class="traffic-summary" style="grid-template-columns:repeat(4,1fr);margin-bottom:0;">
+        <div class="traffic-card"><div class="traffic-card-label">Top 3 positions</div><div class="traffic-card-val" style="font-size:20px;">${(pos.top3||0).toLocaleString()}</div></div>
+        <div class="traffic-card"><div class="traffic-card-label">Positions 4–10</div><div class="traffic-card-val" style="font-size:20px;">${(pos.top10||0).toLocaleString()}</div></div>
+        <div class="traffic-card"><div class="traffic-card-label">Positions 11–30</div><div class="traffic-card-val" style="font-size:20px;">${(pos.top30||0).toLocaleString()}</div></div>
+        <div class="traffic-card"><div class="traffic-card-label">Positions 31–50</div><div class="traffic-card-val" style="font-size:20px;">${(pos.beyond||0).toLocaleString()}</div></div>
       </div>
       <div class="divider"></div>
       <div class="eyebrow" style="margin-bottom:10px;">Top pages by traffic</div>
