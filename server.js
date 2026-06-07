@@ -189,7 +189,7 @@ app.post('/api/serp-data', async (req, res) => {
     const results = await Promise.all(keywords.map(async kw => {
       try {
         const payload = [{ keyword: kw, location_code: locationCode||2710, language_code: languageCode||'en', device: 'desktop', os: 'windows' }];
-        const response = await axios.post('https://api.dataforseo.com/v3/serp/google/organic/live/advanced', payload, { headers: dfsHeaders });
+        const response = await axios.post('https://api.dataforseo.com/v3/serp/google/organic/live/advanced', payload, { headers: dfsHeaders, timeout: 30000 });
         const items = response.data.tasks?.[0]?.result?.[0]?.items || [];
 
         // AI Overview
@@ -268,25 +268,35 @@ app.post('/api/chatgpt-visibility', async (req, res) => {
   try {
     const results = await Promise.all(keywords.map(async kw => {
       try {
+        // Ask a proper search-style question
+        const question = kw.toLowerCase().includes(brandName.toLowerCase())
+          ? `Tell me about ${kw}`
+          : `What are the best options for "${kw}"? Please mention specific brands.`;
+
+        console.log(`ChatGPT query: "${question}"`);
+
         const response = await axios.post('https://api.openai.com/v1/chat/completions', {
           model: 'gpt-4o-mini',
-          max_tokens: 300,
-          messages: [{ role: 'user', content: kw }]
+          max_tokens: 400,
+          messages: [{ role: 'user', content: question }]
         }, { headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' } });
 
-        const answer   = response.data.choices?.[0]?.message?.content || '';
+        const answer    = response.data.choices?.[0]?.message?.content || '';
         const mentioned = answer.toLowerCase().includes(brandName.toLowerCase());
         const cited     = answer.toLowerCase().includes(rootDomain.toLowerCase());
+
+        console.log(`ChatGPT result for "${kw}": mentioned=${mentioned}, answer length=${answer.length}`);
 
         // Extract snippet where brand is mentioned
         let snippet = '';
         if (mentioned) {
           const idx = answer.toLowerCase().indexOf(brandName.toLowerCase());
-          snippet = answer.substring(Math.max(0, idx - 50), Math.min(answer.length, idx + 150)).trim();
+          snippet = answer.substring(Math.max(0, idx - 50), Math.min(answer.length, idx + 200)).trim();
         }
 
-        return { keyword: kw, mentioned, cited, snippet, answer: answer.slice(0, 500) };
+        return { keyword: kw, question, mentioned, cited, snippet, answer: answer.slice(0, 600) };
       } catch (e) {
+        console.error(`ChatGPT error for "${kw}":`, e.response?.data || e.message);
         return { keyword: kw, mentioned: false, cited: false, snippet: '', error: e.message };
       }
     }));
@@ -355,86 +365,66 @@ app.post('/api/traffic', async (req, res) => {
   }
 });
 
-// ── Social — JS rendering (fix 6) ────────────────────────────────────────────
+// ── Social — free HTML crawl, no DataForSEO tokens ───────────────────────────
 app.post('/api/social', async (req, res) => {
   const { domains, locationCode } = req.body;
   if (!domains?.length) return res.status(400).json({ error: 'domains required' });
+
   const SOCIAL_PATTERNS = {
-    facebook:  /facebook\.com\//i,
-    instagram: /instagram\.com\//i,
-    youtube:   /youtube\.com\//i,
-    tiktok:    /tiktok\.com\//i,
-    linkedin:  /linkedin\.com\//i,
-    twitter:   /twitter\.com\/|x\.com\//i,
-    pinterest: /pinterest\.com\//i
+    facebook:  /(?:facebook\.com|fb\.com)\/[^"'\s>]+/gi,
+    instagram: /instagram\.com\/[^"'\s>]+/gi,
+    youtube:   /youtube\.com\/(?:channel|c|user|@)[^"'\s>]+/gi,
+    tiktok:    /tiktok\.com\/@[^"'\s>]+/gi,
+    linkedin:  /linkedin\.com\/(?:company|in)\/[^"'\s>]+/gi,
+    twitter:   /(?:twitter\.com|x\.com)\/[^"'\s>]+/gi,
+    pinterest: /pinterest\.com\/[^"'\s>]+/gi
   };
+
+  // Clean and deduplicate a matched URL
+  function cleanSocialUrl(url) {
+    return url.replace(/['"\s>]+.*$/, '').replace(/\/$/, '');
+  }
+
   try {
     const results = await Promise.all(domains.map(async ({ name, domain }) => {
       try {
         const cd = cleanDomain(domain);
-        const payload = [{
-          target:            `https://${cd}`,
-          location_code:     locationCode||2710,
-          load_resources:    true,
-          enable_javascript: true,
-          enable_browser_rendering: false
-        }];
-        const response = await axios.post('https://api.dataforseo.com/v3/on_page/instant_pages', payload, { headers: dfsHeaders });
-        const pageData  = response.data.tasks?.[0]?.result?.[0]?.items?.[0];
+        // Fetch raw HTML directly — free, no DataForSEO tokens
+        const response = await axios.get(`https://${cd}`, {
+          timeout: 10000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5'
+          },
+          maxRedirects: 5
+        });
 
-        // Log all available data keys for debugging
-        console.log('Social page keys for', cd, ':', Object.keys(pageData || {}));
-
-        // Check all possible link sources
-        const allLinks = [
-          ...(pageData?.items || []),
-          ...(pageData?.links || []),
-          ...(pageData?.resource_errors || []),
-        ];
-
-        // Also check page HTML content for social URLs
-        const rawHtml = pageData?.content || pageData?.meta?.description || '';
-
+        const html = response.data || '';
         const social = {};
 
-        // Check structured links
-        allLinks.forEach(item => {
-          const url = item.url || item.href || item.link || item.source || '';
-          Object.entries(SOCIAL_PATTERNS).forEach(([platform, pattern]) => {
-            if (pattern.test(url) && !social[platform]) social[platform] = url;
-          });
-        });
-
-        // Check meta tags
-        const meta = pageData?.meta || {};
-        Object.values(meta).forEach(val => {
-          if (typeof val === 'string') {
-            Object.entries(SOCIAL_PATTERNS).forEach(([platform, pattern]) => {
-              if (pattern.test(val) && !social[platform]) social[platform] = val;
-            });
+        // Extract social links from HTML
+        Object.entries(SOCIAL_PATTERNS).forEach(([platform, pattern]) => {
+          const matches = html.match(pattern);
+          if (matches?.length) {
+            // Take the first clean match
+            const url = cleanSocialUrl(matches[0]);
+            if (url.length > 15) social[platform] = 'https://' + url;
           }
-        });
-
-        // Check extra_tags which often contain social links
-        const extraTags = pageData?.extra_tags || [];
-        extraTags.forEach(tag => {
-          const val = tag.content || tag.href || tag.value || '';
-          Object.entries(SOCIAL_PATTERNS).forEach(([platform, pattern]) => {
-            if (pattern.test(val) && !social[platform]) social[platform] = val;
-          });
         });
 
         console.log('Social found for', cd, ':', JSON.stringify(social));
         return { name, domain: cd, social };
+
       } catch (e) {
-        console.error('Social crawl error for', domain, e.message);
+        console.error('Social fetch error for', domain, ':', e.message);
         return { name, domain: cleanDomain(domain), social: {} };
       }
     }));
     res.json({ results });
   } catch (err) {
-    console.error('Social error:', err.response?.data || err.message);
-    res.status(500).json({ error: err.response?.data?.error?.message || err.message });
+    console.error('Social error:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

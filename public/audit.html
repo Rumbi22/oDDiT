@@ -510,23 +510,34 @@ async function loadAISearch() {
     console.log(`Keywords: ${kwData.length} returned, ${totalKwCount} total_count, ${itemsCount} items_count`);
     const kwStrings = kwData.map(k=>k.keyword);
 
-    // Step 2 — SERP data for all keywords
-    const serpRes  = await fetch('/api/serp-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keywords:kwStrings,domain:clientDomain,locationCode,languageCode})});
-    const serpJson = await serpRes.json();
-    serpData = serpJson.results || [];
+    // Step 2 + 3 — SERP data and intent classification in parallel, independent
+    const [serpResult, intentResult] = await Promise.allSettled([
+      fetch('/api/serp-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keywords:kwStrings,domain:clientDomain,locationCode,languageCode})}).then(r=>r.json()),
+      fetch('/api/classify-intent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keywords:kwStrings})}).then(r=>r.json())
+    ]);
 
-    // Merge SERP data into kwData
-    kwData = kwData.map(k => {
-      const serp = serpData.find(s=>s.keyword===k.keyword)||{};
-      return {...k,...serp};
-    });
+    // Merge SERP data if available
+    if(serpResult.status === 'fulfilled' && !serpResult.value.error) {
+      serpData = serpResult.value.results || [];
+      kwData = kwData.map(k => {
+        const serp = serpData.find(s=>s.keyword===k.keyword)||{};
+        return {...k,...serp};
+      });
+      console.log('SERP data loaded for', serpData.length, 'keywords');
+    } else {
+      console.error('SERP data failed:', serpResult.reason || serpResult.value?.error);
+    }
 
-    // Step 3 — auto classify intent in background
-    const intentRes = await fetch('/api/classify-intent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keywords:kwStrings})});
-    const intentJson = await intentRes.json();
-    const intentMap = {};
-    (Array.isArray(intentJson)?intentJson:[]).forEach(r=>intentMap[r.keyword]=r.intent);
-    kwData.forEach(k => k.intent = intentMap[k.keyword] || 'informational');
+    // Merge intent if available
+    if(intentResult.status === 'fulfilled' && Array.isArray(intentResult.value)) {
+      const intentMap = {};
+      intentResult.value.forEach(r=>intentMap[r.keyword]=r.intent);
+      kwData.forEach(k => k.intent = intentMap[k.keyword] || 'informational');
+      console.log('Intent classified for', intentResult.value.length, 'keywords');
+    } else {
+      console.error('Intent failed:', intentResult.reason || intentResult.value?.error);
+      kwData.forEach(k => k.intent = 'informational');
+    }
 
     kwEl.innerHTML   = buildKwRankings(kwData);
     serpEl.innerHTML = buildSerpFeatures(kwData);
@@ -727,9 +738,13 @@ async function runChatGPTCheck() {
       const mentionedHtml = r.mentioned
         ? '<span style="color:var(--psi-pass-text);">Yes</span>'
         : '<span style="color:#aaa;">No</span>';
-      const snippetHtml = r.snippet
-        ? `<div style="font-size:10px;color:var(--text-muted);font-style:italic;margin-top:4px;line-height:1.5;">"…${r.snippet}…"</div>`
-        : r.mentioned ? '' : `<div style="font-size:10px;color:#ccc;margin-top:4px;">${r.answer?.slice(0,200)||'No response'}…</div>`;
+      const questionHtml = r.question
+        ? `<div style="font-size:9px;color:#aaa;margin-bottom:4px;">Asked: "${r.question}"</div>` : '';
+      const snippetHtml = r.error
+        ? `<div style="font-size:10px;color:var(--psi-fail-text);">Error: ${r.error}</div>`
+        : r.snippet
+          ? `${questionHtml}<div style="font-size:10px;color:var(--text-muted);font-style:italic;line-height:1.5;">"…${r.snippet}…"</div>`
+          : `${questionHtml}<div style="font-size:10px;color:#888;line-height:1.5;">${r.answer?.slice(0,300)||'No response'}${r.answer?.length>300?'…':''}</div>`;
       return `<tr>
         <td style="font-weight:500;">${r.keyword}</td>
         <td>${mentionedHtml}</td>
